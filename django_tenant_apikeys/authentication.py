@@ -17,31 +17,22 @@ except ImportError as exc:  # pragma: no cover - exercised only when DRF is abse
 
 from .models import AbstractTenantAPIKey, get_api_key_model
 
-#: Re-exported for convenience/backward compatibility -- the canonical
-#: definition lives in :mod:`django_tenant_apikeys.models` since it is
-#: needed by non-DRF integrations (e.g. Django Ninja) too.
+# get_api_key_model is re-exported here too since non-DRF integrations
+# (Ninja) need it without pulling in this module's DRF dependency.
 __all__ = ["API_KEY_KEYWORD", "TenantAPIKeyAuthentication", "get_api_key_model"]
 
-#: The ``Authorization`` header scheme this backend responds to, e.g.
-#: ``Authorization: Api-Key <raw_key>``.
 API_KEY_KEYWORD = "Api-Key"
 
 
 class TenantAPIKeyAuthentication(BaseAuthentication):
-    """Authenticate requests bearing an ``Authorization: Api-Key <key>`` header.
+    """Authenticates ``Authorization: Api-Key <key>`` requests.
 
-    On success, returns ``(None, api_key_instance)``: the first element of
-    DRF's ``(user, auth)`` tuple is intentionally ``None`` rather than a
-    Django ``User``, since an API key authenticates a tenant/client
-    integration, not a human account. The authenticated key is available as
-    ``request.auth`` in views, e.g. for :class:`~django_tenant_apikeys.permissions.HasAPIKeyScope`.
+    Returns ``(None, api_key_instance)`` on success -- no Django ``User``,
+    since a key authenticates an integration rather than a person. If the
+    model has a ``tenant`` relation it's attached to ``request.tenant``.
 
-    If the resolved model defines a ``tenant`` relation, the related object
-    is additionally attached to the request as ``request.tenant``.
-
-    The model is resolved from ``settings.TENANT_API_KEY_MODEL`` by default.
-    Subclass and set the ``model`` attribute directly to bypass the setting,
-    e.g. when a project needs multiple key models authenticated differently::
+    Resolves the model from ``TENANT_API_KEY_MODEL`` by default; set
+    ``model`` on a subclass to skip the setting::
 
         class PartnerAPIKeyAuthentication(TenantAPIKeyAuthentication):
             model = PartnerAPIKey

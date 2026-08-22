@@ -1,16 +1,8 @@
-"""
-django-tenant-apikeys
-======================
+"""Multi-tenant API key authentication for Django.
 
-Pluggable multi-tenant API key authentication for Django, with first-class
-support for Django REST Framework and Django Ninja.
-
-This top-level package intentionally avoids importing :mod:`django.db.models`
-or any Django-app internals at import time, since doing so before Django's
-app registry is ready (e.g. while ``INSTALLED_APPS`` is still being
-evaluated) raises ``django.core.exceptions.AppRegistryNotReady``. Import from
-the relevant submodule instead, e.g. ``from django_tenant_apikeys.models
-import AbstractTenantAPIKey``.
+No Django imports here on purpose -- this module can get imported before
+the app registry is ready. Pull from the actual submodule instead, e.g.
+``from django_tenant_apikeys.models import AbstractTenantAPIKey``.
 """
 
 from __future__ import annotations

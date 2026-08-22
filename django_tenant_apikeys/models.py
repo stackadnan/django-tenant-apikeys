@@ -1,16 +1,8 @@
 """Core models and key-generation utilities for django-tenant-apikeys.
 
-The security model follows the "prefix + secret" pattern used by most
-production API key systems (Stripe, GitHub, etc.):
-
-* A raw key is only ever shown to the caller once, at creation time. It is
-  never stored anywhere, in any form other than its SHA-256 hash.
-* The raw key is split into a public ``prefix`` (stored in cleartext, used
-  as an indexed lookup column) and a ``secret`` (never stored, only ever
-  compared by its hash). This lets :class:`AbstractTenantAPIKey.objects`
-  find the right row with an indexed equality lookup on ``prefix`` before
-  paying the cost of a constant-time hash comparison, instead of hashing
-  every stored key on every request.
+Keys use the standard prefix + secret pattern (Stripe, GitHub, etc.): the
+prefix is a cleartext, indexed lookup value with no real entropy, and the
+secret is only ever stored as a SHA-256 hash.
 """
 
 from __future__ import annotations
@@ -34,72 +26,34 @@ __all__ = [
     "TenantAPIKeyManager",
 ]
 
-#: Number of random bytes used for the human-visible "secret prefix" segment.
-#: Rendered as hex, so this yields twice as many characters (8 by default).
-_SECRET_PREFIX_BYTES = 4
+_SECRET_PREFIX_BYTES = 4  # -> 8 hex chars
+_SECRET_BYTES = 32  # 256 bits, matches the SHA-256 hash strength
 
-#: Number of random bytes used for the secret segment, before URL-safe
-#: base64 encoding. 32 bytes (256 bits) matches the SHA-256 hash strength
-#: used to store the key and is comfortably beyond brute-force range.
-_SECRET_BYTES = 32
-
-#: Must match AbstractTenantAPIKey.prefix's max_length. generate_api_key()
-#: validates against this so a long caller-supplied prefix fails loudly at
-#: key-creation time instead of raising an opaque DataError (or silently
-#: truncating, on backends that allow it) when the row is saved.
+# Must match AbstractTenantAPIKey.prefix.max_length. generate_api_key()
+# checks against this so a long custom prefix fails with a clear error
+# instead of a DB-level truncation/DataError at save time.
 _MAX_KEY_PREFIX_LENGTH = 32
-
-#: How much of that budget is consumed by the "_live_<secret_prefix>" suffix
-#: generate_api_key() appends, leaving the rest for the caller-supplied
-#: leading segment.
 _MAX_INPUT_PREFIX_LENGTH = _MAX_KEY_PREFIX_LENGTH - len("_live_") - (_SECRET_PREFIX_BYTES * 2)
 
 _KeyModel = TypeVar("_KeyModel", bound="AbstractTenantAPIKey")
 
 
 def hash_key(raw_key: str) -> str:
-    """Return the SHA-256 hex digest of ``raw_key``.
-
-    This is a plain (unsalted) hash. That is a deliberate trade-off, not an
-    oversight: the input already carries 256 bits of cryptographic entropy
-    (see :func:`generate_api_key`), so it is not vulnerable to dictionary or
-    rainbow-table attacks the way a low-entropy user password would be.
-    Salting would only add the ability to look up a key by hash without
-    also knowing the prefix, which this library never needs to do.
-    """
+    """SHA-256 hex digest of ``raw_key``. Unsalted on purpose -- the input
+    already has 256 bits of entropy, so it isn't at risk the way a
+    low-entropy password hash would be."""
     return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
 
 
 def generate_api_key(prefix: str = "tak") -> tuple[str, str, str]:
-    """Generate a new, cryptographically random API key.
+    """Generate a random key and return ``(full_key, key_prefix, hashed_key)``.
 
-    Args:
-        prefix: A short, stable identifier for the *kind* of key being
-            issued (e.g. ``"tak"``, or a per-application prefix such as
-            ``"acme"``). It becomes the leading segment of both the full
-            key and the stored lookup prefix, which is useful for
-            distinguishing key families at a glance and for tools like
-            secret scanners.
+    ``full_key`` (``<prefix>_live_<secret_prefix>.<secret>``) is shown once
+    and never persisted. ``key_prefix`` is the part before the dot, safe to
+    store and index on. ``hashed_key`` is what actually gets saved.
 
-    Returns:
-        A 3-tuple of ``(full_key, key_prefix, hashed_key)``:
-
-        * ``full_key`` -- the complete secret value, formatted as
-          ``<prefix>_live_<secret_prefix>.<secret>``. Shown to the caller
-          exactly once; never persisted.
-        * ``key_prefix`` -- the ``<prefix>_live_<secret_prefix>`` segment
-          only. Safe to store in cleartext and index on, since it carries
-          no meaningful entropy on its own -- it exists purely so a stored
-          key row can be looked up in O(1) without scanning and hashing
-          every row in the table.
-        * ``hashed_key`` -- the SHA-256 hex digest of ``full_key``, safe to
-          persist and compare against on future requests.
-
-    Raises:
-        ValueError: If ``prefix`` is too long for the generated
-            ``key_prefix`` to fit within :attr:`AbstractTenantAPIKey.prefix`'s
-            ``max_length=32`` once the fixed ``_live_<secret_prefix>`` suffix
-            is appended.
+    Raises ``ValueError`` if ``prefix`` is too long to fit the generated
+    ``key_prefix`` within ``AbstractTenantAPIKey.prefix``'s ``max_length=32``.
     """
     if len(prefix) > _MAX_INPUT_PREFIX_LENGTH:
         raise ValueError(
@@ -116,16 +70,11 @@ def generate_api_key(prefix: str = "tak") -> tuple[str, str, str]:
 
 
 def get_api_key_model() -> type[AbstractTenantAPIKey]:
-    """Resolve the concrete API key model configured via ``settings.TENANT_API_KEY_MODEL``.
+    """Resolve the model configured via ``settings.TENANT_API_KEY_MODEL``.
 
-    This is framework-agnostic: it underlies
-    :class:`~django_tenant_apikeys.authentication.TenantAPIKeyAuthentication`
-    for DRF, but is equally usable from a Django Ninja auth callable, a
-    plain Django view, or a management command.
-
-    Raises:
-        ImproperlyConfigured: If the setting is unset, or does not point to
-            a valid, installed ``"app_label.ModelName"`` model.
+    Framework-agnostic -- used by the DRF authentication backend, but just
+    as usable from a Ninja auth callable or a plain view. Raises
+    ``ImproperlyConfigured`` if the setting is missing or invalid.
     """
     model_path = getattr(settings, "TENANT_API_KEY_MODEL", None)
     if not model_path:
@@ -144,43 +93,29 @@ def get_api_key_model() -> type[AbstractTenantAPIKey]:
 
 
 if TYPE_CHECKING:
-    # django-stubs models Manager/QuerySet as generic over the model they
-    # belong to. Parameterizing the real runtime base class would require
-    # every consumer of this package to call django_stubs_ext.monkeypatch()
-    # first (plain Django's Manager isn't subscriptable at runtime), so the
-    # generic parameter is only visible to type checkers via this branch;
-    # `else` is what actually executes.
+    # Real Manager isn't subscriptable at runtime without django_stubs_ext's
+    # monkeypatch(), so the generic param only exists for type checkers.
     _TenantAPIKeyManagerBase = models.Manager["AbstractTenantAPIKey"]
 else:
     _TenantAPIKeyManagerBase = models.Manager
 
 
 class TenantAPIKeyManager(_TenantAPIKeyManagerBase):
-    """Manager providing lookup helpers on top of the ``prefix`` column."""
+    """Manager with lookup helpers on top of the ``prefix`` column."""
 
     def get_from_key(self, raw_key: str) -> AbstractTenantAPIKey:
-        """Return the stored key row referenced by ``raw_key``.
-
-        Only the ``prefix`` segment of ``raw_key`` is used for the lookup;
-        this does **not** verify the secret. Callers must still call
-        :meth:`AbstractTenantAPIKey.verify_key` on the returned instance
-        before trusting it -- this method exists purely to turn an O(n)
-        "hash every row" search into an O(1) indexed lookup.
-
-        Raises:
-            self.model.DoesNotExist: If no row has a matching prefix.
-        """
+        """Indexed prefix lookup for ``raw_key``. Doesn't verify the secret
+        -- call ``verify_key()`` on the result. Raises ``DoesNotExist`` if
+        no row matches."""
         key_prefix, _sep, _secret = raw_key.partition(".")
         return self.get(prefix=key_prefix)
 
     def get_usable_keys(self) -> models.QuerySet[AbstractTenantAPIKey]:
-        """Return active, non-expired keys, ordered as :attr:`Meta.ordering`."""
+        """Active, unexpired keys."""
         now = timezone.now()
-        # django-stubs' mypy plugin doesn't propagate the manager's generic
-        # parameter through this particular chained .filter().filter() call,
-        # so it infers Any here despite both filter() calls being properly
-        # typed in isolation -- a known class of rough edge in the plugin,
-        # not a real type hole (get_from_key, right above, chains cleanly).
+        # mypy infers Any through this chained filter() under django-stubs;
+        # get_from_key above types fine, so this looks like a plugin quirk
+        # rather than an actual hole.
         return self.filter(is_active=True).filter(  # type: ignore[no-any-return]
             models.Q(expires_at__isnull=True) | models.Q(expires_at__gt=now)
         )
@@ -189,7 +124,7 @@ class TenantAPIKeyManager(_TenantAPIKeyManagerBase):
 class AbstractTenantAPIKey(models.Model):
     """Abstract base model for a tenant-scoped API key.
 
-    Host projects subclass this to attach a key to their own tenant model::
+    Subclass it and add your own tenant relation::
 
         class OrganizationAPIKey(AbstractTenantAPIKey):
             tenant = models.ForeignKey(
@@ -197,11 +132,6 @@ class AbstractTenantAPIKey(models.Model):
                 related_name="api_keys",
                 on_delete=models.CASCADE,
             )
-
-    Only the SHA-256 hash of a generated key is ever persisted -- the raw
-    secret exists only in memory for the duration of :meth:`generate_key`
-    and must be captured and shown to the caller by application code at
-    that point, since it cannot be recovered afterwards.
     """
 
     name = models.CharField(
@@ -257,19 +187,12 @@ class AbstractTenantAPIKey(models.Model):
     def generate_key(
         cls: type[_KeyModel], *, prefix: str = "tak", **kwargs: Any
     ) -> tuple[_KeyModel, str]:
-        """Create, save, and return a new key instance together with its raw secret.
+        """Create and save a new key, returning ``(instance, raw_key)``.
 
-        Args:
-            prefix: Passed through to :func:`generate_api_key`.
-            **kwargs: Any other concrete-model field values (e.g. ``name``,
-                ``scopes``, ``expires_at``, or a ``tenant`` relation defined
-                by a subclass).
-
-        Returns:
-            A ``(instance, raw_key)`` tuple. ``raw_key`` is the only time
-            the caller will ever see the secret in full -- it is not
-            recoverable from ``instance`` afterwards, since only its hash
-            is persisted.
+        ``**kwargs`` are passed straight to the model constructor (``name``,
+        ``scopes``, ``expires_at``, a ``tenant`` relation, etc). ``raw_key``
+        is your only chance to see the secret -- it isn't recoverable from
+        ``instance`` afterwards.
         """
         full_key, key_prefix, hashed_key = generate_api_key(prefix=prefix)
         instance = cls(prefix=key_prefix, hashed_key=hashed_key, **kwargs)
@@ -277,36 +200,20 @@ class AbstractTenantAPIKey(models.Model):
         return instance, full_key
 
     def verify_key(self, raw_key: str) -> bool:
-        """Return ``True`` if ``raw_key`` hashes to this row's stored hash.
-
-        Uses :func:`secrets.compare_digest` for a constant-time comparison,
-        so response timing cannot be used to leak how much of a guessed key
-        was correct.
-        """
+        """Constant-time check of ``raw_key`` against the stored hash."""
         return secrets.compare_digest(self.hashed_key, hash_key(raw_key))
 
     @property
     def is_expired(self) -> bool:
-        """``True`` if this key has an ``expires_at`` in the past."""
         return self.expires_at is not None and self.expires_at < timezone.now()
 
     @property
     def is_valid(self) -> bool:
-        """``True`` if this key is active and not expired."""
         return self.is_active and not self.is_expired
 
     def has_scope(self, required_scope: str) -> bool:
-        """Return ``True`` if this key's ``scopes`` satisfy ``required_scope``.
-
-        Three forms of match are supported, checked in order:
-
-        1. Exact match -- ``required_scope`` appears verbatim in ``scopes``.
-        2. Global wildcard -- ``scopes`` contains ``"*"``, granting every
-           possible scope.
-        3. Namespaced wildcard -- ``scopes`` contains an entry ending in
-           ``":*"`` (e.g. ``"orders:*"``) whose namespace prefix matches
-           ``required_scope`` (e.g. ``"orders:read"``).
-        """
+        """True if ``scopes`` grants ``required_scope`` -- exact match,
+        global ``"*"``, or a namespaced ``"orders:*"`` wildcard."""
         if not self.scopes:
             return False
         if required_scope in self.scopes:
@@ -315,7 +222,7 @@ class AbstractTenantAPIKey(models.Model):
             return True
         for scope in self.scopes:
             if isinstance(scope, str) and scope.endswith(":*"):
-                namespace = scope[:-1]  # e.g. "orders:*" -> "orders:"
+                namespace = scope[:-1]  # "orders:*" -> "orders:"
                 if required_scope.startswith(namespace):
                     return True
         return False

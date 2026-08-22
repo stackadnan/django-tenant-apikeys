@@ -18,25 +18,17 @@ from .models import AbstractTenantAPIKey
 
 
 class HasAPIKeyScope(BasePermission):
-    """Grant access only if the authenticated API key has every required scope.
-
-    Views declare their requirement via a ``required_scopes`` attribute::
+    """Denies access unless the authenticated key has every scope in the
+    view's ``required_scopes``::
 
         class OrdersView(APIView):
             authentication_classes = [TenantAPIKeyAuthentication]
             permission_classes = [HasAPIKeyScope]
             required_scopes = ["orders:read"]
 
-    A view with no ``required_scopes`` attribute (or an empty one) is
-    accessible to any successfully authenticated API key. Each listed scope
-    is checked with :meth:`AbstractTenantAPIKey.has_scope`, which itself
-    honors ``"*"`` and namespaced (``"orders:*"``) wildcards -- all
-    required scopes must be satisfied for the check to pass.
-
-    This permission always denies access when ``request.auth`` is not an
-    API key instance (e.g. no authentication occurred, or a different
-    authentication backend populated ``request.auth``), so it should be
-    paired with :class:`~django_tenant_apikeys.authentication.TenantAPIKeyAuthentication`.
+    No ``required_scopes`` (or an empty list) means any authenticated key
+    is allowed through. Pair with ``TenantAPIKeyAuthentication`` -- this
+    just returns False if ``request.auth`` isn't an API key instance.
     """
 
     message = "This API key does not have the required scope(s) for this action."
