@@ -1,22 +1,34 @@
 # django-tenant-apikeys
 
-Pluggable multi-tenant API key authentication for Django, with first-class
-support for [Django REST Framework](https://www.django-rest-framework.org/)
-and [Django Ninja](https://django-ninja.dev/).
+[![PyPI version](https://img.shields.io/pypi/v/django-tenant-apikeys.svg)](https://pypi.org/project/django-tenant-apikeys/)
+[![Python versions](https://img.shields.io/pypi/pyversions/django-tenant-apikeys.svg)](https://pypi.org/project/django-tenant-apikeys/)
+[![Tests](https://github.com/stackadnan/django-tenant-apikeys/actions/workflows/test.yml/badge.svg)](https://github.com/stackadnan/django-tenant-apikeys/actions/workflows/test.yml)
+[![License: MIT](https://img.shields.io/pypi/l/django-tenant-apikeys.svg)](LICENSE)
+
+Multi-tenant API key authentication for Django. Issue a key per tenant, hash
+it before it ever touches the database, and gate access with scopes instead
+of an all-or-nothing flag. Works with Django REST Framework out of the box,
+and with Django Ninja via a short recipe below.
+
+If you've ever built API key auth for a SaaS product, you've probably
+written this same code three or four times: generate a random token, hash
+it, store the hash, look it up on every request, and figure out how to show
+the raw key to the user exactly once. `django-tenant-apikeys` is that code,
+written once, tested properly, and wired up to whatever tenant model your
+project already has.
 
 - **Bring your own tenant model.** Subclass one abstract model and point it
-  at whatever `Organization`, `Account`, or `Workspace` model your project
-  already has.
-- **Secure by construction.** Keys are generated with `secrets`, stored only
-  as a SHA-256 hash, and verified with a constant-time comparison. The raw
-  key is shown to the caller exactly once, at creation time, and is not
-  recoverable afterwards — not even by you.
-- **Scope-based permissions.** Grant keys fine-grained scopes
-  (`"orders:read"`), namespaced wildcards (`"orders:*"`), or full access
-  (`"*"`).
-- **Framework-agnostic core.** The model and its methods don't depend on DRF
-  or Ninja at all — `authentication.py` and `permissions.py` are thin,
-  optional adapters on top of it.
+  at whatever `Organization`, `Account`, or `Workspace` model you already
+  have. No schema opinions beyond that.
+- **Nothing sensitive is stored.** Keys are generated with `secrets`, kept
+  only as a SHA-256 hash, and checked with a constant-time comparison. The
+  raw key exists for one moment — right after creation — and then it's gone,
+  even from us.
+- **Scopes, not just on/off.** Grant a key `"orders:read"`, a whole
+  namespace with `"orders:*"`, or everything with `"*"`.
+- **Small, framework-agnostic core.** The model doesn't know DRF or Ninja
+  exist. `authentication.py` and `permissions.py` are optional adapters on
+  top of it, so you can build your own integration if neither fits.
 
 ## Table of contents
 
@@ -27,9 +39,11 @@ and [Django Ninja](https://django-ninja.dev/).
 - [Django Ninja integration](#django-ninja-integration)
 - [Scopes](#scopes)
 - [Admin integration](#admin-integration)
+- [How this compares to other options](#how-this-compares-to-other-options)
 - [Settings reference](#settings-reference)
 - [API reference](#api-reference)
 - [Security notes](#security-notes)
+- [FAQ](#faq)
 - [Running the tests](#running-the-tests)
 - [Contributing](#contributing)
 - [License](#license)
@@ -40,23 +54,24 @@ and [Django Ninja](https://django-ninja.dev/).
 pip install django-tenant-apikeys[drf]
 ```
 
-Extras are additive and optional:
+Extras are additive:
 
-| Extra  | Installs                    | Needed for                          |
-|--------|------------------------------|--------------------------------------|
-| `drf`  | `djangorestframework>=3.14` | `TenantAPIKeyAuthentication`, `HasAPIKeyScope` |
-| `ninja`| `django-ninja>=1.0`         | The Ninja recipe below              |
+| Extra   | Installs                    | Needed for                                     |
+|---------|------------------------------|-------------------------------------------------|
+| `drf`   | `djangorestframework>=3.14` | `TenantAPIKeyAuthentication`, `HasAPIKeyScope`   |
+| `ninja` | `django-ninja>=1.0`          | The Ninja recipe below                          |
 
-Installing neither extra still gives you `AbstractTenantAPIKey`,
-`generate_api_key`, `hash_key`, and `get_api_key_model` — everything needed
-to build your own integration.
+You don't have to pick either. Installing the bare package still gives you
+`AbstractTenantAPIKey`, `generate_api_key`, `hash_key`, and
+`get_api_key_model` — enough to wire up your own auth layer if you're not
+on DRF or Ninja.
 
 ## Quick start
 
 ### 1. Define your concrete key model
 
-`AbstractTenantAPIKey` is abstract on purpose: every project's tenant model
-is different, so you link the two yourself.
+`AbstractTenantAPIKey` ships abstract on purpose. Every project's tenant
+model looks different, so you decide how the two connect:
 
 ```python
 # myapp/models.py
@@ -76,27 +91,27 @@ class OrganizationAPIKey(AbstractTenantAPIKey):
     )
 ```
 
-The `tenant` field name is significant: both `TenantAPIKeyAuthentication`
-and the Django Ninja recipe below look for an attribute literally named
-`tenant` and, if present, attach it to the request as `request.tenant`. Call
-it something else and that convenience is simply skipped — everything else
-still works.
+That field has to be named `tenant`. Both `TenantAPIKeyAuthentication` and
+the Ninja recipe below check for an attribute with that exact name and, if
+it exists, attach it to the request as `request.tenant`. Name it something
+else and you just lose that one convenience — everything else still works
+fine.
 
-### 2. Configure settings
+### 2. Point Django at it
 
 ```python
 # settings.py
 INSTALLED_APPS = [
     ...
     "django_tenant_apikeys",  # only needed for the admin integration
-    "rest_framework",         # if using the DRF integration
+    "rest_framework",         # if you're using the DRF integration
     "myapp",
 ]
 
 TENANT_API_KEY_MODEL = "myapp.OrganizationAPIKey"
 ```
 
-### 3. Migrate
+### 3. Migrate as usual
 
 ```bash
 python manage.py makemigrations myapp
@@ -117,16 +132,19 @@ instance, raw_key = OrganizationAPIKey.generate_key(
 )
 
 print(raw_key)
-# tak_live_3f9a2c1d.k7pQ2m1vXyN0...  <- show this to the user now; it is
-#                                        never stored and can't be shown again
+# tak_live_3f9a2c1d.k7pQ2m1vXyN0...
+# show this to the user right now — it's never stored, and can't be
+# shown again once you look away
 ```
 
-`instance` is already saved. Only `instance.hashed_key` (its SHA-256 digest)
-is persisted — capture `raw_key` here or it's gone for good.
+`instance` is already saved by the time you get it back. What lands in the
+database is `instance.hashed_key`, the SHA-256 digest — not `raw_key`. Copy
+the raw key out of that print statement and put it wherever your app needs
+to hand it to the user, because this is the only chance you get.
 
 ## How keys work
 
-A generated key looks like:
+A generated key looks like this:
 
 ```
 tak_live_3f9a2c1d.Xk7pQ2m1vYzN0hT8sR4uWjLdEaFbGcHiJk
@@ -136,15 +154,19 @@ tak_live_3f9a2c1d.Xk7pQ2m1vYzN0hT8sR4uWjLdEaFbGcHiJk
    stored in `prefix` column (indexed, unique, cleartext)
 ```
 
-* `generate_api_key(prefix="tak")` returns `(full_key, key_prefix, hashed_key)`.
-* `key_prefix` (`tak_live_3f9a2c1d`) is stored in cleartext in the `prefix`
-  column. It carries no meaningful secrecy on its own — it exists purely so
-  a request can be matched to a row with a single indexed `WHERE prefix = ?`
-  lookup, instead of hashing and comparing against every row in the table.
-* `hashed_key` is `sha256(full_key)`, stored in the `hashed_key` column.
-* The **only** place `full_key` (the actual secret) ever exists is the
-  return value of `generate_api_key()` / `AbstractTenantAPIKey.generate_key()`.
-  Nothing in this library writes it to the database, logs, or the admin.
+`generate_api_key(prefix="tak")` builds that and returns
+`(full_key, key_prefix, hashed_key)`.
+
+The part before the dot — `tak_live_3f9a2c1d` — is stored in the `prefix`
+column, in plain text, and it's fine that it is. It doesn't carry enough
+entropy to matter on its own; its only job is letting a lookup hit a unique
+index instead of hashing every row in the table on every request.
+
+The part after the dot is the actual secret. It never gets written down
+anywhere except as `sha256(full_key)`, in the `hashed_key` column. The one
+and only place the full, usable key exists is the return value of
+`generate_api_key()` — logs, the admin, the database, none of them ever see
+it.
 
 ## Django REST Framework integration
 
@@ -169,7 +191,7 @@ class DeploymentsView(APIView):
         return Response(status=201)
 ```
 
-Or wire it globally:
+Or skip the per-view wiring and set it globally:
 
 ```python
 # settings.py
@@ -180,26 +202,27 @@ REST_FRAMEWORK = {
 }
 ```
 
-Callers authenticate with:
+Clients send:
 
 ```
 Authorization: Api-Key tak_live_3f9a2c1d.Xk7pQ2m1vYzN0hT8sR4uWjLdEaFbGcHiJk
 ```
 
-`TenantAPIKeyAuthentication.authenticate()`:
+A few things worth knowing about what `authenticate()` actually does:
 
-* Returns `None` if there's no `Authorization` header, or it doesn't use the
-  `Api-Key` scheme — deferring to any other configured authenticator.
-* Raises `rest_framework.exceptions.AuthenticationFailed` (HTTP 401) if the
-  scheme matches but the key is missing, malformed, unknown, tampered with,
-  inactive, or expired.
-* On success, returns `(None, api_key_instance)`. The first element is
-  `None` rather than a Django `User`, because an API key authenticates a
-  tenant/integration, not a human — `request.user` stays anonymous and
-  `request.auth` holds the key.
+- No `Authorization` header, or one that isn't using the `Api-Key` scheme?
+  It returns `None` and gets out of the way, so any other authenticator you
+  have configured gets a turn.
+- Scheme matches but the key is missing, malformed, unrecognized, tampered
+  with, deactivated, or expired? It raises `AuthenticationFailed` — a plain
+  401, same as DRF's built-in authenticators.
+- On success it returns `(None, api_key_instance)`. That `None` where a
+  Django `User` would normally sit is intentional — an API key authenticates
+  an integration, not a person, so `request.user` stays anonymous and
+  `request.auth` is where the key instance actually lives.
 
-Multiple key models in one project? Subclass instead of relying on the
-setting:
+Running more than one kind of key in the same project? Subclass instead of
+juggling settings:
 
 ```python
 class PartnerAPIKeyAuthentication(TenantAPIKeyAuthentication):
@@ -208,29 +231,28 @@ class PartnerAPIKeyAuthentication(TenantAPIKeyAuthentication):
 
 ### Scoped permissions
 
-`HasAPIKeyScope` reads a `required_scopes` list off the view and checks it
+`HasAPIKeyScope` reads `required_scopes` off the view and checks each entry
 against `request.auth.has_scope(...)`:
 
 ```python
 class OrdersView(APIView):
     authentication_classes = [TenantAPIKeyAuthentication]
     permission_classes = [HasAPIKeyScope]
-    required_scopes = ["orders:read", "orders:write"]  # ALL must be granted
+    required_scopes = ["orders:read", "orders:write"]  # all of these, not any
 ```
 
-A view without a `required_scopes` attribute (or an empty one) is open to
-any successfully authenticated key.
+No `required_scopes` on the view, or an empty list? Then any authenticated
+key gets in — the check is opt-in per view.
 
 ## Django Ninja integration
 
-There's no dedicated Ninja module shipped in this package — Ninja's
-[`APIKeyHeader`](https://django-ninja.dev/guides/authentication/) auth
-classes are simple enough that one lives comfortably in your own project,
-built directly on the same `AbstractTenantAPIKey` methods DRF uses:
+There's no dedicated Ninja module in this package, and honestly there
+doesn't need to be — Ninja's
+[`APIKeyHeader`](https://django-ninja.dev/guides/authentication/) is small
+enough to write directly against the same model methods DRF uses:
 
 ```python
 # myapp/auth.py
-from django.utils import timezone
 from ninja.security import APIKeyHeader
 
 from django_tenant_apikeys.models import get_api_key_model
@@ -278,27 +300,28 @@ def create_deployment(request):
     return {"status": "ok"}
 ```
 
-`get_api_key_model()` (and every method on the model) works identically
-here — only the HTTP-layer glue differs between frameworks.
+`get_api_key_model()`, `verify_key()`, `has_scope()` — all of it works the
+same regardless of which framework is calling it. Only the header-parsing
+glue changes.
 
 ## Scopes
 
-`scopes` is a plain JSON list of strings. `has_scope()` supports three
-forms, checked in this order:
+`scopes` is just a JSON list of strings on the key. `has_scope()` checks it
+three ways, in order:
 
 ```python
 key.scopes = ["orders:read"]
-key.has_scope("orders:read")   # True  (exact match)
+key.has_scope("orders:read")   # True  — exact match
 key.has_scope("orders:write")  # False
 
 key.scopes = ["*"]
-key.has_scope("anything:at:all")  # True (global wildcard)
+key.has_scope("anything:at:all")  # True — global wildcard
 
 key.scopes = ["orders:*"]
-key.has_scope("orders:read")   # True  (namespaced wildcard)
+key.has_scope("orders:read")   # True  — namespaced wildcard
 key.has_scope("orders:write")  # True
-key.has_scope("billing:read")  # False (different namespace)
-key.has_scope("orders")        # False (wildcard requires the "orders:" prefix)
+key.has_scope("billing:read")  # False — different namespace
+key.has_scope("orders")        # False — wildcard needs the "orders:" prefix
 ```
 
 ## Admin integration
@@ -315,19 +338,31 @@ class OrganizationAPIKeyAdmin(TenantAPIKeyAdmin):
     pass
 ```
 
-`TenantAPIKeyAdmin`:
+That gets you a list view with a masked key column
+(`tak_live_3f9a2c1d.••••••••••••`) instead of anything secret, and a
+create flow that shows the raw key exactly once, in a dismissible admin
+message, right after you save. It's never written to a form field, so it
+can't come back later in the change view no matter who's looking. `prefix`,
+`hashed_key`, and `created_at` are read-only for the same reason — there's
+nothing useful an admin user could safely do by editing them.
 
-* Sets `readonly_fields = ("prefix", "hashed_key", "created_at")`, so the
-  hash can be inspected (e.g. to confirm a key exists) but never edited.
-* Generates the prefix/hash pair itself on creation and shows the one-time
-  raw key in a dismissible admin message — it is never written to a form
-  field, so it can't round-trip back into the database or appear in the
-  change view afterwards.
-* Lists a `masked_key` column (`tak_live_3f9a2c1d.••••••••••••`) instead of
-  any secret material, so list views stay safe to screen-share.
+It's a normal `ModelAdmin` underneath, so `list_display`, `fieldsets`,
+custom permissions — all of that layers on top the way you'd expect.
 
-Add your own `list_display`, `fieldsets`, etc. as usual — `TenantAPIKeyAdmin`
-is a normal `ModelAdmin` subclass.
+## How this compares to other options
+
+The most established alternative in the Django ecosystem is
+[`djangorestframework-api-key`](https://florimondmanca.github.io/djangorestframework-api-key/),
+and it's a solid, battle-tested package. If all you need is a key that's
+either active or not, it's the safer, more established pick.
+
+`django-tenant-apikeys` exists for a narrower, specific shape of problem:
+you have tenants, and a key belongs to one of them. The `tenant` attachment
+on `request.tenant` and the scope system (`"orders:*"`-style wildcards, not
+just a boolean) are built around that use case rather than added on top of
+a more generic one. If you're not multi-tenant, or you don't need
+per-key permissions, you probably don't need this package — and that's a
+fine reason to use something else instead.
 
 ## Settings reference
 
@@ -335,62 +370,100 @@ is a normal `ModelAdmin` subclass.
 |-------------------------|:--------:|---------------------------------------------------------------------------|
 | `TENANT_API_KEY_MODEL`  | Yes\*    | `"app_label.ModelName"` string pointing at your concrete key model. Read by `get_api_key_model()` / `TenantAPIKeyAuthentication.get_model()`. |
 
-\* Only required if you use the default model resolution. Subclassing
-`TenantAPIKeyAuthentication` with an explicit `model` attribute, or calling
-`get_api_key_model()` never at all, makes it optional.
+\* Only if you rely on the default model resolution. Subclass
+`TenantAPIKeyAuthentication` with an explicit `model` attribute, or don't
+call `get_api_key_model()` at all, and you can skip this setting entirely.
 
 ## API reference
 
 ### `django_tenant_apikeys.models`
 
-* `generate_api_key(prefix: str = "tak") -> tuple[str, str, str]` — returns
+- `generate_api_key(prefix: str = "tak") -> tuple[str, str, str]` — returns
   `(full_key, key_prefix, hashed_key)`.
-* `hash_key(raw_key: str) -> str` — SHA-256 hex digest of `raw_key`.
-* `get_api_key_model() -> type[AbstractTenantAPIKey]` — resolves
-  `settings.TENANT_API_KEY_MODEL`; raises `ImproperlyConfigured` if unset or
-  invalid.
-* `AbstractTenantAPIKey` — abstract model with fields `name`, `prefix`,
-  `hashed_key`, `scopes`, `is_active`, `created_at`, `expires_at`, and:
-  * `generate_key(cls, *, prefix="tak", **kwargs) -> tuple[instance, raw_key]`
-  * `verify_key(self, raw_key: str) -> bool`
-  * `has_scope(self, required_scope: str) -> bool`
-  * `is_expired` / `is_valid` properties
-* `TenantAPIKeyManager` (`.objects`) — adds `get_from_key(raw_key)` (indexed
-  lookup by prefix; still call `verify_key()` on the result) and
-  `get_usable_keys()` (active and unexpired).
+- `hash_key(raw_key: str) -> str` — SHA-256 hex digest of `raw_key`.
+- `get_api_key_model() -> type[AbstractTenantAPIKey]` — resolves
+  `settings.TENANT_API_KEY_MODEL`; raises `ImproperlyConfigured` if it's
+  unset or invalid.
+- `AbstractTenantAPIKey` — abstract model with fields `name`, `prefix`,
+  `hashed_key`, `scopes`, `is_active`, `created_at`, `expires_at`, plus:
+  - `generate_key(cls, *, prefix="tak", **kwargs) -> tuple[instance, raw_key]`
+  - `verify_key(self, raw_key: str) -> bool`
+  - `has_scope(self, required_scope: str) -> bool`
+  - `is_expired` / `is_valid` properties
+- `TenantAPIKeyManager` (`.objects`) — `get_from_key(raw_key)` for an
+  indexed prefix lookup (still call `verify_key()` on what it returns),
+  and `get_usable_keys()` for active, unexpired keys only.
 
-### `django_tenant_apikeys.authentication` (requires `[drf]`)
+### `django_tenant_apikeys.authentication` (needs `[drf]`)
 
-* `TenantAPIKeyAuthentication` — DRF `BaseAuthentication` subclass described
-  above.
+- `TenantAPIKeyAuthentication` — the DRF `BaseAuthentication` subclass
+  described above.
 
-### `django_tenant_apikeys.permissions` (requires `[drf]`)
+### `django_tenant_apikeys.permissions` (needs `[drf]`)
 
-* `HasAPIKeyScope` — DRF `BasePermission` subclass described above.
+- `HasAPIKeyScope` — the DRF `BasePermission` subclass described above.
 
 ### `django_tenant_apikeys.admin`
 
-* `TenantAPIKeyAdmin` — `ModelAdmin` base class described above.
+- `TenantAPIKeyAdmin` — the `ModelAdmin` base class described above.
 
 ## Security notes
 
-* **Hashing is unsalted SHA-256, deliberately.** The input already carries
-  256 bits of entropy from `secrets.token_urlsafe`, so it isn't vulnerable
-  to dictionary or rainbow-table attacks the way a low-entropy user
-  password would be. Salting a value that's already high-entropy adds
-  operational cost without a corresponding security gain here.
-* **Comparison is constant-time.** `verify_key()` uses
-  `secrets.compare_digest`, not `==`, so response timing can't be used to
-  narrow down a guessed key byte by byte.
-* **The raw key is never persisted, logged, or displayed twice.** Store it
-  yourself (e.g. show it once in your UI, or hand it back from an API
-  response) the moment `generate_key()` returns it — this library cannot
-  recover it for you afterwards.
-* **Deactivate, don't just delete.** Setting `is_active=False` revokes a key
-  immediately while preserving an audit trail; `TenantAPIKeyAuthentication`
-  rejects inactive keys with the same `AuthenticationFailed` used for
-  invalid ones, so revoked keys don't leak information about their own
-  existence.
+**The hash is unsalted SHA-256, and that's deliberate, not an oversight.**
+The input already carries 256 bits of entropy from `secrets.token_urlsafe`
+— it's nothing like a low-entropy human password, so it isn't exposed to
+dictionary or rainbow-table attacks the way a password hash would be.
+Salting a value that's already this random buys you nothing here.
+
+**Comparisons run in constant time.** `verify_key()` uses
+`secrets.compare_digest` instead of `==`, so an attacker can't use response
+timing to work out a key one byte at a time.
+
+**The raw key can't be recovered, by design.** Once `generate_key()`
+returns it, that's the only copy that will ever exist. If your app loses
+it before showing it to the user, the fix is issuing a new key — not
+digging through the database.
+
+**Revoke by deactivating, not deleting.** `is_active=False` shuts a key off
+immediately while keeping the audit trail intact, and
+`TenantAPIKeyAuthentication` rejects a deactivated key with the exact same
+error it uses for an invalid one — so a revoked key doesn't leak the fact
+that it used to be valid.
+
+**This library doesn't rate-limit anything.** It verifies a presented key;
+it has no opinion on how many times someone gets to guess wrong. Pair it
+with a DRF throttle class if brute-force protection matters for your API.
+
+## FAQ
+
+**Is this production-ready?**
+The core is small, has 100% test coverage, and is type-checked with mypy
+in strict mode. That said, it's a young package (`v0.1.0`) without much of
+a track record yet — read the code before you bet a production auth path
+on it, same as you should with any new dependency.
+
+**Do I need Django REST Framework to use this?**
+No. The model, hashing, and scope logic have zero DRF dependency. The
+`[drf]` extra only adds `TenantAPIKeyAuthentication` and `HasAPIKeyScope`
+on top. Plain Django views, or Ninja via the recipe above, both work
+without it.
+
+**How do I rotate a key?**
+There's no built-in `rotate()` yet — issue a new key with
+`Model.generate_key(...)`, update whatever's using the old one, then set
+`is_active=False` on the old row once the rollover is done.
+
+**Can a key have more than one tenant?**
+Not out of the box — `tenant` is a single `ForeignKey`. If you need a key
+shared across several tenants, model that relationship yourself; the
+library doesn't assume anything about how `tenant` is defined beyond its
+name.
+
+**Async views?**
+`TenantAPIKeyAuthentication.authenticate()` is synchronous, matching DRF's
+own authentication classes, which don't have first-class async support
+either. Wrap the lookup in `sync_to_async` if you're calling it from async
+code directly.
 
 ## Running the tests
 
@@ -401,16 +474,17 @@ pip install -e ".[dev]"
 pytest --cov=django_tenant_apikeys --cov-report=term-missing
 ```
 
-The suite runs against an in-memory SQLite database defined in
-`tests/settings.py`, with `tests/models.py` providing concrete subclasses of
-`AbstractTenantAPIKey` (`AbstractTenantAPIKey` itself is abstract and can't
-be instantiated or queried directly).
+The suite runs against an in-memory SQLite database (`tests/settings.py`),
+with concrete subclasses of `AbstractTenantAPIKey` defined in
+`tests/models.py` — the abstract model itself can't be instantiated or
+queried directly, so something concrete has to stand in for it.
 
 ## Contributing
 
-Issues and pull requests are welcome. Please include tests for any behavior
-change, and run `ruff check .`, `mypy django_tenant_apikeys`, and `pytest`
-before opening a PR — these are exactly what CI runs on every push.
+Issues and pull requests are welcome. If you're changing behavior, add a
+test for it, and run `ruff check .`, `mypy django_tenant_apikeys`, and
+`pytest` before opening the PR — that's exactly what CI checks on every
+push, so you'll see the same result either way.
 
 ## License
 
