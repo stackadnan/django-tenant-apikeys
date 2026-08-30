@@ -9,6 +9,10 @@ versions if a `0.x` release note says so.
 
 ## [Unreleased]
 
+No unreleased changes yet.
+
+## [0.2.0] - 2026-08-30
+
 ### Added
 
 - `AbstractTenantAPIKey.last_used_at` — records when a key last
@@ -51,5 +55,6 @@ Initial release.
 - Documented recipe for Django Ninja integration (no dedicated module
   shipped — see the README).
 
-[Unreleased]: https://github.com/stackadnan/django-tenant-apikeys/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/stackadnan/django-tenant-apikeys/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/stackadnan/django-tenant-apikeys/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/stackadnan/django-tenant-apikeys/releases/tag/v0.1.0
