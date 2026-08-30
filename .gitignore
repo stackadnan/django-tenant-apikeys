@@ -21,6 +21,9 @@ venv/
 coverage.xml
 htmlcov/
 
+# Example project's local database
+examples/**/db.sqlite3
+
 # Editors
 .vscode/
 .idea/
