@@ -4,6 +4,7 @@
 [![Python versions](https://img.shields.io/pypi/pyversions/django-tenant-apikeys.svg)](https://pypi.org/project/django-tenant-apikeys/)
 [![Tests](https://github.com/stackadnan/django-tenant-apikeys/actions/workflows/test.yml/badge.svg)](https://github.com/stackadnan/django-tenant-apikeys/actions/workflows/test.yml)
 [![License: MIT](https://img.shields.io/pypi/l/django-tenant-apikeys.svg)](LICENSE)
+[![Latest on Django Packages](https://img.shields.io/badge/Django_Packages-django--tenant--apikeys-8c3c26.svg)](https://djangopackages.org/packages/p/django-tenant-apikeys/)
 
 Multi-tenant API key authentication for Django. Issue a key per tenant, hash
 it before it ever touches the database, and gate access with scopes instead
