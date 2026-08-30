@@ -30,10 +30,18 @@ project already has.
   exist. `authentication.py` and `permissions.py` are optional adapters on
   top of it, so you can build your own integration if neither fits.
 
+**Want to see it run before reading further?**
+[`examples/simple_saas/`](examples/simple_saas/) is a minimal Django + DRF
+project with the whole flow wired up — clone the repo, `pip install -r
+requirements.txt`, `python manage.py migrate && python manage.py
+create_demo_key`, and you have a real tenant-scoped API key and a working
+`curl` command in about a minute.
+
 ## Table of contents
 
 - [Installation](#installation)
 - [Quick start](#quick-start)
+- [Example project](#example-project)
 - [How keys work](#how-keys-work)
 - [Django REST Framework integration](#django-rest-framework-integration)
 - [Django Ninja integration](#django-ninja-integration)
@@ -141,6 +149,27 @@ print(raw_key)
 database is `instance.hashed_key`, the SHA-256 digest — not `raw_key`. Copy
 the raw key out of that print statement and put it wherever your app needs
 to hand it to the user, because this is the only chance you get.
+
+## Example project
+
+[`examples/simple_saas/`](examples/simple_saas/) runs the steps above as an
+actual project instead of a code snippet: an `Organization` tenant, an
+`OrganizationAPIKey`, and one protected view (`WhoAmIView`) that reports back
+whatever the library resolved from the request — which tenant, which key,
+which scopes.
+
+```bash
+cd examples/simple_saas
+pip install -r requirements.txt
+python manage.py migrate
+python manage.py create_demo_key   # creates a tenant, issues a key, prints a curl command
+python manage.py runserver         # in another terminal
+```
+
+Run the `curl` command it prints and you'll get the tenant back in the
+response. Its own [README](examples/simple_saas/README.md) also walks
+through the failure cases — no header, a garbage key, the wrong scope — so
+you can see what each one actually returns.
 
 ## How keys work
 
