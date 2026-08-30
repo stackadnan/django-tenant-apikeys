@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/stackadnan/django-tenant-apikeys/security/advisories/new
+    about: Please don't open a public issue for security problems — see SECURITY.md.
+  - name: Usage questions / "how do I..."
+    url: https://github.com/stackadnan/django-tenant-apikeys/discussions
+    about: For questions that aren't a bug report or a concrete feature proposal, use Discussions instead.

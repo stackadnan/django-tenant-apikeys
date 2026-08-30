@@ -1,0 +1,88 @@
+name: Bug report
+description: Something in django-tenant-apikeys isn't behaving as documented
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. A couple of things first:
+
+        - **Security issue?** Please don't file it here — use the
+          [private vulnerability reporting form](https://github.com/stackadnan/django-tenant-apikeys/security/advisories/new)
+          instead, per [SECURITY.md](https://github.com/stackadnan/django-tenant-apikeys/blob/main/SECURITY.md).
+        - This is a small, single-maintainer package — a minimal, runnable
+          reproduction gets a fix much faster than a description of the
+          symptom alone.
+
+  - type: input
+    id: version
+    attributes:
+      label: django-tenant-apikeys version
+      description: Run `pip show django-tenant-apikeys` if you're not sure.
+      placeholder: "0.2.0"
+    validations:
+      required: true
+
+  - type: input
+    id: python-version
+    attributes:
+      label: Python version
+      placeholder: "3.12"
+    validations:
+      required: true
+
+  - type: input
+    id: django-version
+    attributes:
+      label: Django version
+      placeholder: "5.2"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: drf
+    attributes:
+      label: Are you using the [drf] extra (TenantAPIKeyAuthentication / HasAPIKeyScope)?
+      options:
+        - "Yes"
+        - "No — Django Ninja"
+        - "No — plain Django views"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: Include the exact error message or traceback if there is one.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: >
+        The smallest model/view/settings snippet that reproduces this —
+        ideally something that could be dropped straight into
+        `examples/simple_saas/`.
+      render: python
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and didn't find this already reported.
+          required: true
+        - label: This isn't a security vulnerability (see SECURITY.md above if it is).
+          required: true

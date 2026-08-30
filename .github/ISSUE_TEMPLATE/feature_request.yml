@@ -1,0 +1,51 @@
+name: Feature request
+description: Suggest a new capability or a change to existing behavior
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before opening this, please check whether it's already addressed:
+
+        - [README FAQ](https://github.com/stackadnan/django-tenant-apikeys#faq) —
+          covers `rotate()`, keys shared across multiple tenants, and async views.
+        - [SECURITY.md scope section](https://github.com/stackadnan/django-tenant-apikeys/blob/main/SECURITY.md#scope) —
+          brute-force throttling and client-side key handling are deliberately
+          left to the consuming project.
+
+        A few things (rate limiting, a key belonging to more than one
+        tenant, first-class async support) are intentionally left out of
+        the core rather than built in — if you think one of those should
+        change, this is still the right place to make the case, just know
+        it starts from "why doesn't the existing design cover this."
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: What are you trying to do that the package doesn't support today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed API or behavior
+      description: A code sketch of what you'd want to write, even a rough one, is more useful than a prose description alone.
+      render: python
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What are you doing today instead?
+      description: A workaround in your own code, a different package, hand-rolling it — helps judge how much this is actually needed.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I checked the FAQ and SECURITY.md scope section above.
+          required: true
+        - label: I searched existing issues and didn't find this already requested.
+          required: true

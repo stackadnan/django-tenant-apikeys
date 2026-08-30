@@ -31,3 +31,6 @@ examples/**/db.sqlite3
 # OS
 .DS_Store
 Thumbs.db
+
+# Private planning docs (not for the published repo)
+GROWTH_PLAN.md
