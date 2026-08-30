@@ -9,7 +9,23 @@ versions if a `0.x` release note says so.
 
 ## [Unreleased]
 
-No unreleased changes yet.
+### Added
+
+- `AbstractTenantAPIKey.last_used_at` — records when a key last
+  authenticated successfully. `TenantAPIKeyAuthentication` updates it
+  automatically after every successful authentication; the Django Ninja
+  recipe in the README does too.
+- `AbstractTenantAPIKey.record_usage()` — the method behind the above,
+  throttled by a new `LAST_USED_THRESHOLD` class attribute (5 minutes by
+  default) so a hot endpoint doesn't turn into a database write on every
+  single request. Override `LAST_USED_THRESHOLD` on a subclass to change
+  the granularity.
+
+### Migration required
+
+`last_used_at` is a new field on `AbstractTenantAPIKey`, so every project
+with an existing concrete subclass needs to run `manage.py makemigrations`
+after upgrading, same as any other schema change to an abstract base class.
 
 ## [0.1.0] - 2026-08-22
 

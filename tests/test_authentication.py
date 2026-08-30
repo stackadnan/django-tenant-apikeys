@@ -126,6 +126,27 @@ class TestAuthenticate:
         _user, returned_key = TenantAPIKeyAuthentication().authenticate(request)  # type: ignore[misc]
         assert returned_key.pk == instance.pk
 
+    def test_successful_authentication_records_usage(
+        self, tenant: Tenant, api_key: tuple[TenantAPIKey, str]
+    ) -> None:
+        instance, raw_key = api_key
+        assert instance.last_used_at is None
+
+        request = build_request(f"Api-Key {raw_key}")
+        TenantAPIKeyAuthentication().authenticate(request)
+
+        instance.refresh_from_db()
+        assert instance.last_used_at is not None
+
+    def test_failed_authentication_does_not_record_usage(self, tenant: Tenant) -> None:
+        instance, raw_key = TenantAPIKey.generate_key(name="k", tenant=tenant, is_active=False)
+        request = build_request(f"Api-Key {raw_key}")
+        with pytest.raises(AuthenticationFailed):
+            TenantAPIKeyAuthentication().authenticate(request)
+
+        instance.refresh_from_db()
+        assert instance.last_used_at is None
+
     def test_tenant_is_attached_to_request(
         self, tenant: Tenant, api_key: tuple[TenantAPIKey, str]
     ) -> None:

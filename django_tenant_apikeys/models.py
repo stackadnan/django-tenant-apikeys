@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-from typing import TYPE_CHECKING, Any, TypeVar
+from datetime import timedelta
+from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
 from django.apps import apps
 from django.conf import settings
@@ -168,8 +169,20 @@ class AbstractTenantAPIKey(models.Model):
         blank=True,
         help_text=_("Optional expiration timestamp. Leave blank for a key that never expires."),
     )
+    last_used_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        editable=False,
+        help_text=_("When this key last authenticated a request. Updated by record_usage()."),
+    )
 
     objects = TenantAPIKeyManager()
+
+    #: Minimum gap between last_used_at writes. record_usage() is a no-op if
+    #: the key was already marked used more recently than this, so a hot
+    #: endpoint doesn't turn every authenticated request into a write.
+    #: Override on a subclass for coarser or finer tracking.
+    LAST_USED_THRESHOLD: ClassVar[timedelta] = timedelta(minutes=5)
 
     class Meta:
         abstract = True
@@ -210,6 +223,22 @@ class AbstractTenantAPIKey(models.Model):
     @property
     def is_valid(self) -> bool:
         return self.is_active and not self.is_expired
+
+    def record_usage(self) -> None:
+        """Mark this key as used just now, throttled by ``LAST_USED_THRESHOLD``.
+
+        Skips the write entirely if ``last_used_at`` is already within the
+        threshold, so calling this on every authenticated request (which is
+        exactly what ``TenantAPIKeyAuthentication`` does) doesn't turn a hot
+        endpoint into a write on every single call. Uses a targeted
+        ``UPDATE`` via the manager rather than ``save()``, so it doesn't
+        re-validate or re-save the rest of the row.
+        """
+        now = timezone.now()
+        if self.last_used_at is not None and now - self.last_used_at < self.LAST_USED_THRESHOLD:
+            return
+        type(self).objects.filter(pk=self.pk).update(last_used_at=now)
+        self.last_used_at = now
 
     def has_scope(self, required_scope: str) -> bool:
         """True if ``scopes`` grants ``required_scope`` -- exact match,

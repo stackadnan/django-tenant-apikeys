@@ -309,6 +309,7 @@ class TenantAPIKeyAuth(APIKeyHeader):
         if not api_key.is_active or api_key.is_expired:
             return None
 
+        api_key.record_usage()
         if hasattr(api_key, "tenant"):
             request.tenant = api_key.tenant
         return api_key
@@ -415,10 +416,15 @@ call `get_api_key_model()` at all, and you can skip this setting entirely.
   `settings.TENANT_API_KEY_MODEL`; raises `ImproperlyConfigured` if it's
   unset or invalid.
 - `AbstractTenantAPIKey` — abstract model with fields `name`, `prefix`,
-  `hashed_key`, `scopes`, `is_active`, `created_at`, `expires_at`, plus:
+  `hashed_key`, `scopes`, `is_active`, `created_at`, `expires_at`,
+  `last_used_at`, plus:
   - `generate_key(cls, *, prefix="tak", **kwargs) -> tuple[instance, raw_key]`
   - `verify_key(self, raw_key: str) -> bool`
   - `has_scope(self, required_scope: str) -> bool`
+  - `record_usage(self) -> None` — updates `last_used_at`, throttled by
+    `LAST_USED_THRESHOLD` (5 minutes by default) so a hot endpoint isn't a
+    write on every request. `TenantAPIKeyAuthentication` calls this on every
+    successful authentication; call it yourself from a custom integration.
   - `is_expired` / `is_valid` properties
 - `TenantAPIKeyManager` (`.objects`) — `get_from_key(raw_key)` for an
   indexed prefix lookup (still call `verify_key()` on what it returns),

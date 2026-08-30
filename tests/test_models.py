@@ -148,6 +148,48 @@ class TestIsValid:
         assert instance.is_valid is False
 
 
+class TestRecordUsage:
+    def test_sets_last_used_at_when_previously_unset(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(name="k", tenant=tenant)
+        assert instance.last_used_at is None
+
+        instance.record_usage()
+
+        assert instance.last_used_at is not None
+
+    def test_persists_to_the_database_not_just_the_instance(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(name="k", tenant=tenant)
+
+        instance.record_usage()
+
+        instance.refresh_from_db()
+        assert instance.last_used_at is not None
+
+    def test_within_threshold_does_not_overwrite(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(name="k", tenant=tenant)
+        instance.record_usage()
+        first_seen = instance.last_used_at
+        assert first_seen is not None
+
+        instance.record_usage()
+
+        assert instance.last_used_at == first_seen
+
+    def test_updates_once_threshold_has_elapsed(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(name="k", tenant=tenant)
+        stale = timezone.now() - instance.LAST_USED_THRESHOLD - timedelta(seconds=1)
+        TenantAPIKey.objects.filter(pk=instance.pk).update(last_used_at=stale)
+        instance.refresh_from_db()
+
+        instance.record_usage()
+
+        assert instance.last_used_at is not None
+        assert instance.last_used_at > stale
+
+    def test_default_threshold_is_five_minutes(self) -> None:
+        assert TenantAPIKey.LAST_USED_THRESHOLD == timedelta(minutes=5)
+
+
 class TestHasScope:
     def test_no_scopes_denies_everything(self, tenant: Tenant) -> None:
         instance, _raw_key = TenantAPIKey.generate_key(name="k", tenant=tenant, scopes=[])

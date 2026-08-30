@@ -89,6 +89,8 @@ class TenantAPIKeyAuthentication(BaseAuthentication):
         if api_key.expires_at is not None and api_key.expires_at < timezone.now():
             raise exceptions.AuthenticationFailed("This API key has expired.")
 
+        api_key.record_usage()
+
         if request is not None and hasattr(api_key, "tenant"):
             request.tenant = api_key.tenant  # type: ignore[attr-defined]
 
