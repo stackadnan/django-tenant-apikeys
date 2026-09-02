@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from django.contrib import admin, messages
+from django.db.models import QuerySet
 from django.http import HttpRequest
 from django.utils.html import format_html
 from django.utils.safestring import SafeString
@@ -30,14 +31,40 @@ class TenantAPIKeyAdmin(_TenantAPIKeyAdminBase):
     never written to a form field or displayed again afterward.
     """
 
-    list_display = ("name", "masked_key", "is_active", "created_at", "expires_at", "last_used_at")
+    list_display = ("name", "masked_key", "status", "created_at", "expires_at", "last_used_at")
     list_filter = ("is_active", "created_at")
     search_fields = ("name", "prefix")
-    readonly_fields = ("prefix", "hashed_key", "created_at", "last_used_at")
+    readonly_fields = (
+        "prefix",
+        "hashed_key",
+        "created_at",
+        "last_used_at",
+        "revoked_at",
+        "revoked_reason",
+    )
+    actions = ["revoke_selected"]
 
     @admin.display(description="Key")
     def masked_key(self, obj: AbstractTenantAPIKey) -> str:
         return f"{obj.prefix}.{'•' * 12}"
+
+    @admin.display(description="Status")
+    def status(self, obj: AbstractTenantAPIKey) -> str:
+        if obj.is_expired:
+            return "Expired"
+        if not obj.is_active:
+            return "Revoked" if obj.revoked_at else "Inactive"
+        return "Active"
+
+    @admin.action(description="Revoke selected API keys")
+    def revoke_selected(
+        self, request: HttpRequest, queryset: QuerySet[AbstractTenantAPIKey]
+    ) -> None:
+        count = 0
+        for api_key in queryset.filter(is_active=True):
+            api_key.revoke(reason="revoked via admin")
+            count += 1
+        self.message_user(request, f"Revoked {count} API key(s).", level=messages.WARNING)
 
     def save_model(
         self,
