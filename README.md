@@ -6,10 +6,18 @@
 [![License: MIT](https://img.shields.io/pypi/l/django-tenant-apikeys.svg)](LICENSE)
 [![Latest on Django Packages](https://img.shields.io/badge/Django_Packages-django--tenant--apikeys-8c3c26.svg)](https://djangopackages.org/packages/p/django-tenant-apikeys/)
 
+<p align="center">
+  <img src="docs/images/banner.png" alt="django-tenant-apikeys" width="900">
+</p>
+
+<p align="center">
+  API keys for multi-tenant Django applications
+</p>
+
 Multi-tenant API key authentication for Django. Issue a key per tenant, hash
-it before it ever touches the database, and gate access with scopes instead
-of an all-or-nothing flag. Works with Django REST Framework out of the box,
-and with Django Ninja via a short recipe below.
+it before it ever touches the database, gate access with scopes instead of
+an all-or-nothing flag, and rotate or revoke it later without touching your
+own code. Works with Django REST Framework and Django Ninja out of the box.
 
 If you've ever built API key auth for a SaaS product, you've probably
 written this same code three or four times: generate a random token, hash
@@ -27,9 +35,13 @@ project already has.
   even from us.
 - **Scopes, not just on/off.** Grant a key `"orders:read"`, a whole
   namespace with `"orders:*"`, or everything with `"*"`.
+- **A real lifecycle, not just a boolean.** `rotate()` issues a replacement
+  and revokes the original in one call; `revoke()`/`reactivate()` manage
+  access directly. Management commands cover both from the shell.
 - **Small, framework-agnostic core.** The model doesn't know DRF or Ninja
-  exist. `authentication.py` and `permissions.py` are optional adapters on
-  top of it, so you can build your own integration if neither fits.
+  exist. `authentication.py`, `permissions.py`, and `ninja.py` are optional
+  adapters on top of it, so you can build your own integration if neither
+  fits.
 
 **Want to see it run before reading further?**
 [`examples/simple_saas/`](examples/simple_saas/) is a minimal Django + DRF
@@ -47,6 +59,8 @@ create_demo_key`, and you have a real tenant-scoped API key and a working
 - [Django REST Framework integration](#django-rest-framework-integration)
 - [Django Ninja integration](#django-ninja-integration)
 - [Scopes](#scopes)
+- [Key lifecycle: rotating and revoking keys](#key-lifecycle-rotating-and-revoking-keys)
+- [Management commands](#management-commands)
 - [Admin integration](#admin-integration)
 - [How this compares to other options](#how-this-compares-to-other-options)
 - [Settings reference](#settings-reference)
@@ -68,7 +82,7 @@ Extras are additive:
 | Extra   | Installs                    | Needed for                                     |
 |---------|------------------------------|-------------------------------------------------|
 | `drf`   | `djangorestframework>=3.14` | `TenantAPIKeyAuthentication`, `HasAPIKeyScope`   |
-| `ninja` | `django-ninja>=1.0`          | The Ninja recipe below                          |
+| `ninja` | `django-ninja>=1.0`          | `TenantAPIKeyAuth`                              |
 
 You don't have to pick either. Installing the bare package still gives you
 `AbstractTenantAPIKey`, `generate_api_key`, `hash_key`, and
@@ -101,10 +115,10 @@ class OrganizationAPIKey(AbstractTenantAPIKey):
 ```
 
 That field has to be named `tenant`. Both `TenantAPIKeyAuthentication` and
-the Ninja recipe below check for an attribute with that exact name and, if
-it exists, attach it to the request as `request.tenant`. Name it something
-else and you just lose that one convenience — everything else still works
-fine.
+`TenantAPIKeyAuth` (Ninja) check for an attribute with that exact name and,
+if it exists, attach it to the request as `request.tenant`. Name it
+something else and you just lose that one convenience — everything else
+still works fine.
 
 ### 2. Point Django at it
 
@@ -112,7 +126,7 @@ fine.
 # settings.py
 INSTALLED_APPS = [
     ...
-    "django_tenant_apikeys",  # only needed for the admin integration
+    "django_tenant_apikeys",  # needed for the admin integration and the management commands
     "rest_framework",         # if you're using the DRF integration
     "myapp",
 ]
@@ -276,49 +290,15 @@ key gets in — the check is opt-in per view.
 
 ## Django Ninja integration
 
-There's no dedicated Ninja module in this package, and honestly there
-doesn't need to be — Ninja's
-[`APIKeyHeader`](https://django-ninja.dev/guides/authentication/) is small
-enough to write directly against the same model methods DRF uses:
-
-```python
-# myapp/auth.py
-from ninja.security import APIKeyHeader
-
-from django_tenant_apikeys.models import get_api_key_model
-
-
-class TenantAPIKeyAuth(APIKeyHeader):
-    param_name = "Authorization"
-    openapi_scheme = "apikey"
-
-    def authenticate(self, request, key):
-        if not key or not key.startswith("Api-Key "):
-            return None
-        raw_key = key.removeprefix("Api-Key ").strip()
-
-        model = get_api_key_model()
-        key_prefix, _sep, _secret = raw_key.partition(".")
-        try:
-            api_key = model.objects.get(prefix=key_prefix)
-        except model.DoesNotExist:
-            return None
-
-        if not api_key.verify_key(raw_key):
-            return None
-        if not api_key.is_active or api_key.is_expired:
-            return None
-
-        api_key.record_usage()
-        if hasattr(api_key, "tenant"):
-            request.tenant = api_key.tenant
-        return api_key
+```bash
+pip install django-tenant-apikeys[ninja]
 ```
 
 ```python
 # myapp/api.py
 from ninja import NinjaAPI
-from myapp.auth import TenantAPIKeyAuth
+
+from django_tenant_apikeys.ninja import TenantAPIKeyAuth
 
 api = NinjaAPI(auth=TenantAPIKeyAuth())
 
@@ -331,9 +311,27 @@ def create_deployment(request):
     return {"status": "ok"}
 ```
 
-`get_api_key_model()`, `verify_key()`, `has_scope()` — all of it works the
-same regardless of which framework is calling it. Only the header-parsing
-glue changes.
+`TenantAPIKeyAuth` mirrors `TenantAPIKeyAuthentication`'s rules exactly: an
+unknown, tampered, inactive, or expired key never falls through as
+anonymous access, `record_usage()` runs on every success, and
+`request.tenant` gets attached the same way. The one real difference is in
+how failure surfaces — Ninja doesn't have DRF's `AuthenticationFailed` with
+a specific message, so `authenticate()` just returns `None` for every
+rejection reason and Ninja turns that into a 401 on its own.
+
+There's no Ninja equivalent of `HasAPIKeyScope` — Ninja doesn't have a
+permission-class system to hook into the way DRF does, so scope checks
+happen inline in the view via `has_scope()`, as above. `get_api_key_model()`,
+`verify_key()`, `has_scope()`, `rotate()`, `revoke()` — none of it knows or
+cares which framework is calling it.
+
+Need multiple key models, same as the DRF class supports? Subclass and set
+`model`:
+
+```python
+class PartnerAPIKeyAuth(TenantAPIKeyAuth):
+    model = PartnerAPIKey
+```
 
 ## Scopes
 
@@ -355,6 +353,73 @@ key.has_scope("billing:read")  # False — different namespace
 key.has_scope("orders")        # False — wildcard needs the "orders:" prefix
 ```
 
+## Key lifecycle: rotating and revoking keys
+
+**Revoke** a key immediately, permanently:
+
+```python
+api_key.revoke(reason="compromised")   # reason is optional, stored on the row
+api_key.is_active   # False
+```
+
+This sets the same `is_active` flag `TenantAPIKeyAuthentication` already
+checks on every request — there's no separate "revoked" gate to fall out of
+sync with. `revoked_at` and `revoked_reason` are audit metadata; nothing
+reads them to decide whether the key still works. `reactivate()` undoes it:
+
+```python
+api_key.reactivate()
+api_key.is_active   # True again -- but is_expired is independent, so a key
+                     # whose expires_at has already passed stays unusable
+```
+
+**Rotate** a key to replace it without downtime:
+
+```python
+new_key, raw_key = api_key.rotate()
+```
+
+This creates a new row with the same tenant, scopes, and expiration as the
+original (override any of them with keyword arguments, e.g.
+`api_key.rotate(scopes=["orders:*"])`), revokes the original with
+`reason="rotated"`, and returns the new instance and its raw key — the only
+time you'll see it, exactly like `generate_key()`. The old row isn't
+deleted, so it stays visible for audit history; it just can't authenticate
+anymore. Rotating an already-inactive or expired key raises `ValueError`
+rather than silently handing out working access from something that was
+deliberately shut off.
+
+```python
+old_key, raw_key = OrganizationAPIKey.generate_key(name="k", tenant=org)
+new_key, new_raw_key = old_key.rotate()
+
+old_key.is_valid   # False
+new_key.is_valid   # True
+new_key.tenant == old_key.tenant   # True
+```
+
+## Management commands
+
+```bash
+python manage.py tenant_api_key_revoke <prefix> [--reason "why"]
+python manage.py tenant_api_key_rotate <prefix>
+```
+
+Both resolve the model via `TENANT_API_KEY_MODEL` and look a key up by its
+prefix (the part before the dot — never the raw secret, which isn't
+stored), so neither needs to know what fields your concrete model adds.
+`tenant_api_key_rotate` prints the new raw key once, the same way the admin
+and `generate_key()` do.
+
+There's deliberately no `tenant_api_key_create`: creating a key needs
+whatever fields your concrete model requires — at minimum a `tenant` — and
+this package can't know that generically without either hardcoding an
+assumption or degrading into an awkward `--field=value` interface. Copy the
+pattern in
+[`examples/simple_saas/organizations/management/commands/create_demo_key.py`](examples/simple_saas/organizations/management/commands/create_demo_key.py)
+into your own project instead; it's a normal Django management command
+written against your own schema.
+
 ## Admin integration
 
 ```python
@@ -370,12 +435,16 @@ class OrganizationAPIKeyAdmin(TenantAPIKeyAdmin):
 ```
 
 That gets you a list view with a masked key column
-(`tak_live_3f9a2c1d.••••••••••••`) instead of anything secret, and a
-create flow that shows the raw key exactly once, in a dismissible admin
+(`tak_live_3f9a2c1d.••••••••••••`) instead of anything secret, a **Status**
+column (`Active` / `Revoked` / `Inactive` / `Expired` — `Revoked` only shows
+once `revoke()` has actually run, so it's distinct from someone just
+unchecking the "active" box), and a **Revoke selected API keys** bulk
+action. Key creation shows the raw key exactly once, in a dismissible admin
 message, right after you save. It's never written to a form field, so it
 can't come back later in the change view no matter who's looking. `prefix`,
-`hashed_key`, and `created_at` are read-only for the same reason — there's
-nothing useful an admin user could safely do by editing them.
+`hashed_key`, `created_at`, `last_used_at`, `revoked_at`, and
+`revoked_reason` are all read-only for the same reason — there's nothing
+useful an admin user could safely do by editing them directly.
 
 It's a normal `ModelAdmin` underneath, so `list_display`, `fieldsets`,
 custom permissions — all of that layers on top the way you'd expect.
@@ -417,14 +486,19 @@ call `get_api_key_model()` at all, and you can skip this setting entirely.
   unset or invalid.
 - `AbstractTenantAPIKey` — abstract model with fields `name`, `prefix`,
   `hashed_key`, `scopes`, `is_active`, `created_at`, `expires_at`,
-  `last_used_at`, plus:
+  `last_used_at`, `revoked_at`, `revoked_reason`, plus:
   - `generate_key(cls, *, prefix="tak", **kwargs) -> tuple[instance, raw_key]`
+    — raises `ValueError` if `scopes` is passed and isn't a list of
+    non-empty strings.
   - `verify_key(self, raw_key: str) -> bool`
   - `has_scope(self, required_scope: str) -> bool`
   - `record_usage(self) -> None` — updates `last_used_at`, throttled by
     `LAST_USED_THRESHOLD` (5 minutes by default) so a hot endpoint isn't a
-    write on every request. `TenantAPIKeyAuthentication` calls this on every
-    successful authentication; call it yourself from a custom integration.
+    write on every request. `TenantAPIKeyAuthentication` and
+    `TenantAPIKeyAuth` both call this on every successful authentication;
+    call it yourself from a custom integration.
+  - `revoke(self, *, reason="") -> None` / `reactivate(self) -> None`
+  - `rotate(self, *, prefix="tak", **overrides) -> tuple[instance, raw_key]`
   - `is_expired` / `is_valid` properties
 - `TenantAPIKeyManager` (`.objects`) — `get_from_key(raw_key)` for an
   indexed prefix lookup (still call `verify_key()` on what it returns),
@@ -439,9 +513,20 @@ call `get_api_key_model()` at all, and you can skip this setting entirely.
 
 - `HasAPIKeyScope` — the DRF `BasePermission` subclass described above.
 
+### `django_tenant_apikeys.ninja` (needs `[ninja]`)
+
+- `TenantAPIKeyAuth` — the Ninja `APIKeyHeader` subclass described above.
+
 ### `django_tenant_apikeys.admin`
 
 - `TenantAPIKeyAdmin` — the `ModelAdmin` base class described above.
+
+### Management commands
+
+- `tenant_api_key_revoke <prefix> [--reason TEXT]`
+- `tenant_api_key_rotate <prefix>`
+
+Both described above. Require `django_tenant_apikeys` in `INSTALLED_APPS`.
 
 ## Security notes
 
@@ -460,11 +545,19 @@ returns it, that's the only copy that will ever exist. If your app loses
 it before showing it to the user, the fix is issuing a new key — not
 digging through the database.
 
-**Revoke by deactivating, not deleting.** `is_active=False` shuts a key off
-immediately while keeping the audit trail intact, and
-`TenantAPIKeyAuthentication` rejects a deactivated key with the exact same
-error it uses for an invalid one — so a revoked key doesn't leak the fact
-that it used to be valid.
+**Revocation deactivates, it never deletes.** `revoke()` sets the same
+`is_active` flag authentication already checks — there's no second
+enforcement path to keep in sync — and `TenantAPIKeyAuthentication` /
+`TenantAPIKeyAuth` reject a revoked key with the exact same outcome as an
+unknown or expired one. `revoked_at` and `revoked_reason` are audit
+metadata only; nothing about an authentication response distinguishes
+"revoked" from "invalid" from "expired," so a caller probing with guessed
+keys can't learn anything about a key's history from how it fails.
+
+**Rotation can't accidentally resurrect a dead key.** `rotate()` refuses to
+run on a key that's already inactive or expired, and both operations that
+make up a rotation (creating the new row, revoking the old one) happen
+inside a single `transaction.atomic()` block.
 
 **This library doesn't rate-limit anything.** It verifies a presented key;
 it has no opinion on how many times someone gets to guess wrong. Pair it
@@ -473,21 +566,30 @@ with a DRF throttle class if brute-force protection matters for your API.
 ## FAQ
 
 **Is this production-ready?**
-The core is small, has 100% test coverage, and is type-checked with mypy
-in strict mode. That said, it's a young package (`v0.1.0`) without much of
-a track record yet — read the code before you bet a production auth path
-on it, same as you should with any new dependency.
+The core is small, has 100% test coverage (including against PostgreSQL in
+CI, not just SQLite), and is type-checked with mypy in strict mode. That
+said, it's still a young package without much of a track record yet — read
+the code before you bet a production auth path on it, same as you should
+with any new dependency.
 
 **Do I need Django REST Framework to use this?**
-No. The model, hashing, and scope logic have zero DRF dependency. The
-`[drf]` extra only adds `TenantAPIKeyAuthentication` and `HasAPIKeyScope`
-on top. Plain Django views, or Ninja via the recipe above, both work
-without it.
+No. The model, hashing, scope, and lifecycle logic have zero DRF
+dependency. The `[drf]` extra only adds `TenantAPIKeyAuthentication` and
+`HasAPIKeyScope` on top. Plain Django views, or Ninja via `[ninja]`, both
+work without it.
 
 **How do I rotate a key?**
-There's no built-in `rotate()` yet — issue a new key with
-`Model.generate_key(...)`, update whatever's using the old one, then set
-`is_active=False` on the old row once the rollover is done.
+`old_key.rotate()`, or `python manage.py tenant_api_key_rotate <prefix>`
+from the shell. Either returns/prints the new raw key once and revokes the
+old row (kept, not deleted) with `reason="rotated"`. See
+[Key lifecycle](#key-lifecycle-rotating-and-revoking-keys) above.
+
+**How do I revoke a compromised key right now?**
+`api_key.revoke(reason="compromised")`, the **Revoke selected API keys**
+admin action, or `python manage.py tenant_api_key_revoke <prefix> --reason
+compromised`. All three go through the same `is_active` flag
+authentication already checks, so there's no delay or cache to worry
+about — the very next request with that key fails.
 
 **Can a key have more than one tenant?**
 Not out of the box — `tenant` is a single `ForeignKey`. If you need a key
@@ -513,7 +615,11 @@ pytest --cov=django_tenant_apikeys --cov-report=term-missing
 The suite runs against an in-memory SQLite database (`tests/settings.py`),
 with concrete subclasses of `AbstractTenantAPIKey` defined in
 `tests/models.py` — the abstract model itself can't be instantiated or
-queried directly, so something concrete has to stand in for it.
+queried directly, so something concrete has to stand in for it. CI also
+runs the same suite against PostgreSQL (`tests/settings_postgres.py`) —
+`psycopg` isn't part of the `dev` extra, since nothing in the package
+itself needs it, so `pip install "psycopg[binary]"` first if you want to
+run that locally: `pytest --ds=tests.settings_postgres`.
 
 ## Contributing
 

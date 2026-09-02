@@ -15,8 +15,11 @@ pip install -e ".[dev]"
 ```
 
 The `dev` extra pulls in everything needed to run and check the project:
-`pytest`, `pytest-django`, `pytest-cov`, `djangorestframework`, `mypy`,
-`django-stubs`, `djangorestframework-stubs`, and `ruff`.
+`pytest`, `pytest-django`, `pytest-cov`, `djangorestframework`,
+`django-ninja`, `mypy`, `django-stubs`, `djangorestframework-stubs`, and
+`ruff`. It does *not* include `psycopg` -- install `psycopg[binary]`
+yourself if you want to run the suite against PostgreSQL locally (see
+[Running the tests](README.md#running-the-tests) in the main README).
 
 ## Running the checks
 
