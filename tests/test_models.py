@@ -299,6 +299,18 @@ class TestRotate:
 
         assert new_instance.scopes == ["orders:read"]
 
+    def test_scopes_are_an_independent_list_not_shared_with_the_old_row(
+        self, tenant: Tenant
+    ) -> None:
+        old_instance, _old_raw_key = TenantAPIKey.generate_key(
+            name="k", tenant=tenant, scopes=["orders:read"]
+        )
+
+        new_instance, _new_raw_key = old_instance.rotate()
+        new_instance.scopes.append("orders:write")
+
+        assert old_instance.scopes == ["orders:read"]
+
     def test_scopes_can_be_overridden(self, tenant: Tenant) -> None:
         old_instance, _old_raw_key = TenantAPIKey.generate_key(
             name="k", tenant=tenant, scopes=["orders:read"]

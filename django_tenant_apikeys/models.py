@@ -213,6 +213,13 @@ class AbstractTenantAPIKey(models.Model):
     #: Override on a subclass for coarser or finer tracking.
     LAST_USED_THRESHOLD: ClassVar[timedelta] = timedelta(minutes=5)
 
+    #: Fields never copied onto the new row by rotate() -- identity, secret
+    #: material, and per-row audit/lifecycle state all have to be fresh.
+    _ROTATION_EXCLUDED_FIELDS: ClassVar[frozenset[str]] = frozenset(
+        {"id", "prefix", "hashed_key", "created_at", "last_used_at", "revoked_at",
+         "revoked_reason", "is_active"}
+    )
+
     class Meta:
         abstract = True
         ordering = ("-created_at",)
@@ -278,13 +285,6 @@ class AbstractTenantAPIKey(models.Model):
         self.revoked_reason = ""
         self.save(update_fields=["is_active", "revoked_at", "revoked_reason"])
 
-    #: Fields never copied onto the new row by rotate() -- identity, secret
-    #: material, and per-row audit/lifecycle state all have to be fresh.
-    _ROTATION_EXCLUDED_FIELDS: ClassVar[frozenset[str]] = frozenset(
-        {"id", "prefix", "hashed_key", "created_at", "last_used_at", "revoked_at",
-         "revoked_reason", "is_active"}
-    )
-
     def rotate(
         self: _KeyModel, *, prefix: str = "tak", **overrides: Any
     ) -> tuple[_KeyModel, str]:
@@ -313,6 +313,9 @@ class AbstractTenantAPIKey(models.Model):
             for field in self._meta.fields
             if field.name not in self._ROTATION_EXCLUDED_FIELDS
         }
+        # scopes is a JSONField (list) -- copy it so mutating the new key's
+        # scopes in memory can't reach back and mutate this row's too.
+        kwargs["scopes"] = list(kwargs["scopes"])
         kwargs.update(overrides)
         with transaction.atomic():
             new_instance, raw_key = type(self).generate_key(prefix=prefix, **kwargs)
