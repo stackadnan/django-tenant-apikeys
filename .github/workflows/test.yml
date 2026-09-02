@@ -50,6 +50,44 @@ jobs:
           name: coverage-xml
           path: coverage.xml
 
+  test-postgres:
+    name: PostgreSQL
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: django_tenant_apikeys_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "Django~=5.2.0" -e ".[drf,test]" "psycopg[binary]>=3.1"
+
+      - name: Run tests against PostgreSQL
+        env:
+          POSTGRES_HOST: localhost
+        run: python -m pytest --ds=tests.settings_postgres
+
   lint:
     name: Lint (ruff + mypy)
     runs-on: ubuntu-latest
