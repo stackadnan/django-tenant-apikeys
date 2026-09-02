@@ -57,6 +57,7 @@ test = [
     "pytest-django>=4.7",
     "pytest-cov>=4.1",
     "djangorestframework>=3.14",
+    "django-ninja>=1.0",
 ]
 dev = [
     "django-tenant-apikeys[test]",
