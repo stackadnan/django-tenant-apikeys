@@ -96,6 +96,32 @@ class TestGenerateKeyClassmethod:
         assert instance.scopes == []
 
 
+class TestScopeValidation:
+    def test_rejects_a_bare_string_instead_of_a_list(self, tenant: Tenant) -> None:
+        with pytest.raises(ValueError, match="must be a list"):
+            TenantAPIKey.generate_key(name="k", tenant=tenant, scopes="orders:read")
+
+    def test_rejects_a_non_string_element(self, tenant: Tenant) -> None:
+        with pytest.raises(ValueError, match="non-empty string"):
+            TenantAPIKey.generate_key(name="k", tenant=tenant, scopes=[123])
+
+    def test_rejects_an_empty_string_element(self, tenant: Tenant) -> None:
+        with pytest.raises(ValueError, match="non-empty string"):
+            TenantAPIKey.generate_key(name="k", tenant=tenant, scopes=[""])
+
+    def test_accepts_a_tuple_of_scopes(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(
+            name="k", tenant=tenant, scopes=("orders:read",)
+        )
+        assert instance.has_scope("orders:read") is True
+
+    def test_accepts_duplicate_scopes(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(
+            name="k", tenant=tenant, scopes=["orders:read", "orders:read"]
+        )
+        assert instance.has_scope("orders:read") is True
+
+
 class TestVerifyKey:
     def test_correct_key_verifies(self, tenant: Tenant) -> None:
         instance, raw_key = TenantAPIKey.generate_key(name="k", tenant=tenant)
@@ -146,6 +172,211 @@ class TestIsValid:
             name="k", tenant=tenant, expires_at=timezone.now() - timedelta(days=1)
         )
         assert instance.is_valid is False
+
+
+class TestRevoke:
+    def test_deactivates_the_key(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(name="k", tenant=tenant)
+        instance.revoke()
+        assert instance.is_active is False
+        assert instance.is_valid is False
+
+    def test_sets_revoked_at(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(name="k", tenant=tenant)
+        assert instance.revoked_at is None
+        instance.revoke()
+        assert instance.revoked_at is not None
+
+    def test_records_the_given_reason(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(name="k", tenant=tenant)
+        instance.revoke(reason="compromised")
+        assert instance.revoked_reason == "compromised"
+
+    def test_reason_defaults_to_empty_string(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(name="k", tenant=tenant)
+        instance.revoke()
+        assert instance.revoked_reason == ""
+
+    def test_persists_to_the_database(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(name="k", tenant=tenant)
+        instance.revoke(reason="compromised")
+
+        instance.refresh_from_db()
+        assert instance.is_active is False
+        assert instance.revoked_at is not None
+        assert instance.revoked_reason == "compromised"
+
+
+class TestReactivate:
+    def test_reverses_a_revocation(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(name="k", tenant=tenant)
+        instance.revoke(reason="compromised")
+
+        instance.reactivate()
+
+        assert instance.is_active is True
+        assert instance.is_valid is True
+
+    def test_clears_revoked_at_and_reason(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(name="k", tenant=tenant)
+        instance.revoke(reason="compromised")
+
+        instance.reactivate()
+
+        assert instance.revoked_at is None
+        assert instance.revoked_reason == ""
+
+    def test_persists_to_the_database(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(name="k", tenant=tenant)
+        instance.revoke()
+        instance.reactivate()
+
+        instance.refresh_from_db()
+        assert instance.is_active is True
+        assert instance.revoked_at is None
+
+    def test_does_not_override_expiration(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(
+            name="k", tenant=tenant, expires_at=timezone.now() - timedelta(days=1)
+        )
+        instance.revoke()
+
+        instance.reactivate()
+
+        assert instance.is_active is True
+        assert instance.is_expired is True
+        assert instance.is_valid is False
+
+
+class TestRotate:
+    def test_returns_a_new_instance_and_raw_key(self, tenant: Tenant) -> None:
+        old_instance, _old_raw_key = TenantAPIKey.generate_key(name="k", tenant=tenant)
+
+        new_instance, new_raw_key = old_instance.rotate()
+
+        assert new_instance.pk != old_instance.pk
+        assert new_instance.verify_key(new_raw_key) is True
+
+    def test_old_key_becomes_unusable(self, tenant: Tenant) -> None:
+        old_instance, old_raw_key = TenantAPIKey.generate_key(name="k", tenant=tenant)
+
+        old_instance.rotate()
+
+        old_instance.refresh_from_db()
+        assert old_instance.is_active is False
+        assert old_instance.verify_key(old_raw_key) is True  # hash still checks out...
+        assert old_instance.is_valid is False  # ...but the key can no longer authenticate
+
+    def test_old_key_is_revoked_with_reason(self, tenant: Tenant) -> None:
+        old_instance, _old_raw_key = TenantAPIKey.generate_key(name="k", tenant=tenant)
+
+        old_instance.rotate()
+
+        assert old_instance.revoked_reason == "rotated"
+        assert old_instance.revoked_at is not None
+
+    def test_old_row_is_retained_not_deleted(self, tenant: Tenant) -> None:
+        old_instance, _old_raw_key = TenantAPIKey.generate_key(name="k", tenant=tenant)
+        old_pk = old_instance.pk
+
+        old_instance.rotate()
+
+        assert TenantAPIKey.objects.filter(pk=old_pk).exists()
+
+    def test_tenant_is_preserved(self, tenant: Tenant) -> None:
+        old_instance, _old_raw_key = TenantAPIKey.generate_key(name="k", tenant=tenant)
+
+        new_instance, _new_raw_key = old_instance.rotate()
+
+        assert new_instance.tenant == tenant
+
+    def test_scopes_are_preserved_by_default(self, tenant: Tenant) -> None:
+        old_instance, _old_raw_key = TenantAPIKey.generate_key(
+            name="k", tenant=tenant, scopes=["orders:read"]
+        )
+
+        new_instance, _new_raw_key = old_instance.rotate()
+
+        assert new_instance.scopes == ["orders:read"]
+
+    def test_scopes_can_be_overridden(self, tenant: Tenant) -> None:
+        old_instance, _old_raw_key = TenantAPIKey.generate_key(
+            name="k", tenant=tenant, scopes=["orders:read"]
+        )
+
+        new_instance, _new_raw_key = old_instance.rotate(scopes=["orders:*"])
+
+        assert new_instance.scopes == ["orders:*"]
+
+    def test_expiration_is_preserved_by_default(self, tenant: Tenant) -> None:
+        expires_at = timezone.now() + timedelta(days=30)
+        old_instance, _old_raw_key = TenantAPIKey.generate_key(
+            name="k", tenant=tenant, expires_at=expires_at
+        )
+
+        new_instance, _new_raw_key = old_instance.rotate()
+
+        assert new_instance.expires_at == expires_at
+
+    def test_expiration_can_be_overridden(self, tenant: Tenant) -> None:
+        old_instance, _old_raw_key = TenantAPIKey.generate_key(
+            name="k", tenant=tenant, expires_at=timezone.now() + timedelta(days=30)
+        )
+        new_expiry = timezone.now() + timedelta(days=90)
+
+        new_instance, _new_raw_key = old_instance.rotate(expires_at=new_expiry)
+
+        assert new_instance.expires_at == new_expiry
+
+    def test_name_is_preserved(self, tenant: Tenant) -> None:
+        old_instance, _old_raw_key = TenantAPIKey.generate_key(name="CI deploy key", tenant=tenant)
+
+        new_instance, _new_raw_key = old_instance.rotate()
+
+        assert new_instance.name == "CI deploy key"
+
+    def test_new_prefix_differs_from_old(self, tenant: Tenant) -> None:
+        old_instance, _old_raw_key = TenantAPIKey.generate_key(name="k", tenant=tenant)
+
+        new_instance, _new_raw_key = old_instance.rotate()
+
+        assert new_instance.prefix != old_instance.prefix
+
+    def test_raw_secret_is_not_persisted(self, tenant: Tenant) -> None:
+        old_instance, _old_raw_key = TenantAPIKey.generate_key(name="k", tenant=tenant)
+
+        new_instance, new_raw_key = old_instance.rotate()
+
+        assert new_raw_key not in new_instance.hashed_key
+        assert new_instance.hashed_key == hash_key(new_raw_key)
+
+    def test_repeated_rotation(self, tenant: Tenant) -> None:
+        gen1, _raw1 = TenantAPIKey.generate_key(name="k", tenant=tenant)
+        gen2, raw2 = gen1.rotate()
+
+        gen3, raw3 = gen2.rotate()
+
+        gen1.refresh_from_db()
+        gen2.refresh_from_db()
+        assert gen1.is_valid is False
+        assert gen2.is_valid is False
+        assert gen3.is_valid is True
+        assert gen3.verify_key(raw3) is True
+        assert gen3.verify_key(raw2) is False
+
+    def test_rotating_an_inactive_key_raises(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(name="k", tenant=tenant, is_active=False)
+
+        with pytest.raises(ValueError, match="inactive or expired"):
+            instance.rotate()
+
+    def test_rotating_an_expired_key_raises(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(
+            name="k", tenant=tenant, expires_at=timezone.now() - timedelta(days=1)
+        )
+
+        with pytest.raises(ValueError, match="inactive or expired"):
+            instance.rotate()
 
 
 class TestRecordUsage:

@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 from django.apps import apps
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
@@ -68,6 +68,22 @@ def generate_api_key(prefix: str = "tak") -> tuple[str, str, str]:
     full_key = f"{key_prefix}.{secret}"
     hashed_key = hash_key(full_key)
     return full_key, key_prefix, hashed_key
+
+
+def _validate_scopes(scopes: Any) -> None:
+    """Raise ``ValueError`` if ``scopes`` isn't a list/tuple of non-empty strings.
+
+    Called from :meth:`AbstractTenantAPIKey.generate_key`, the one blessed
+    creation path, so a mistake like passing a bare string instead of a
+    list is caught immediately rather than silently misbehaving later --
+    e.g. ``scopes="orders:read"`` would otherwise iterate character by
+    character in :meth:`~AbstractTenantAPIKey.has_scope`'s wildcard check.
+    """
+    if not isinstance(scopes, (list, tuple)):
+        raise ValueError(f"scopes must be a list of strings, got {type(scopes).__name__}")
+    for scope in scopes:
+        if not isinstance(scope, str) or not scope:
+            raise ValueError(f"each scope must be a non-empty string, got {scope!r}")
 
 
 def get_api_key_model() -> type[AbstractTenantAPIKey]:
@@ -175,6 +191,19 @@ class AbstractTenantAPIKey(models.Model):
         editable=False,
         help_text=_("When this key last authenticated a request. Updated by record_usage()."),
     )
+    revoked_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        editable=False,
+        help_text=_("When this key was revoked, if it has been. Set by revoke()."),
+    )
+    revoked_reason = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        editable=False,
+        help_text=_("Why this key was revoked, if a reason was given to revoke()."),
+    )
 
     objects = TenantAPIKeyManager()
 
@@ -206,7 +235,11 @@ class AbstractTenantAPIKey(models.Model):
         ``scopes``, ``expires_at``, a ``tenant`` relation, etc). ``raw_key``
         is your only chance to see the secret -- it isn't recoverable from
         ``instance`` afterwards.
+
+        Raises ``ValueError`` if ``scopes`` is passed and isn't a list of
+        non-empty strings.
         """
+        _validate_scopes(kwargs.get("scopes", []))
         full_key, key_prefix, hashed_key = generate_api_key(prefix=prefix)
         instance = cls(prefix=key_prefix, hashed_key=hashed_key, **kwargs)
         instance.save()
@@ -223,6 +256,68 @@ class AbstractTenantAPIKey(models.Model):
     @property
     def is_valid(self) -> bool:
         return self.is_active and not self.is_expired
+
+    def revoke(self, *, reason: str = "") -> None:
+        """Deactivate this key immediately and permanently.
+
+        Sets the same ``is_active`` flag that authentication already checks
+        -- there's no separate "revoked" enforcement path to keep in sync.
+        ``revoked_at``/``revoked_reason`` are audit metadata only.
+        """
+        self.is_active = False
+        self.revoked_at = timezone.now()
+        self.revoked_reason = reason
+        self.save(update_fields=["is_active", "revoked_at", "revoked_reason"])
+
+    def reactivate(self) -> None:
+        """Undo :meth:`revoke`. Does not affect expiration -- reactivating
+        a key whose ``expires_at`` has already passed leaves it just as
+        unusable as before, since :attr:`is_valid` checks both."""
+        self.is_active = True
+        self.revoked_at = None
+        self.revoked_reason = ""
+        self.save(update_fields=["is_active", "revoked_at", "revoked_reason"])
+
+    #: Fields never copied onto the new row by rotate() -- identity, secret
+    #: material, and per-row audit/lifecycle state all have to be fresh.
+    _ROTATION_EXCLUDED_FIELDS: ClassVar[frozenset[str]] = frozenset(
+        {"id", "prefix", "hashed_key", "created_at", "last_used_at", "revoked_at",
+         "revoked_reason", "is_active"}
+    )
+
+    def rotate(
+        self: _KeyModel, *, prefix: str = "tak", **overrides: Any
+    ) -> tuple[_KeyModel, str]:
+        """Replace this key with a new one, revoking this row in the process.
+
+        Every concrete-model field (``name``, ``scopes``, ``expires_at``, a
+        subclass's ``tenant`` relation, anything else) carries over to the
+        new row unchanged unless overridden via ``**overrides`` -- rotation
+        never needs to know what fields a subclass adds. This row is kept,
+        not deleted, so the old key remains visible for audit/history; it's
+        revoked with ``reason="rotated"`` and can never authenticate again.
+
+        Returns ``(new_instance, raw_key)``, exactly like :meth:`generate_key`.
+
+        Raises ``ValueError`` if this key is already inactive or expired --
+        rotating a dead key would silently hand out working access from
+        something that was deliberately (or automatically) shut off.
+        """
+        if not self.is_valid:
+            raise ValueError(
+                "Cannot rotate an inactive or expired key. Issue a new key "
+                "with generate_key() instead if you want to grant fresh access."
+            )
+        kwargs = {
+            field.name: getattr(self, field.name)
+            for field in self._meta.fields
+            if field.name not in self._ROTATION_EXCLUDED_FIELDS
+        }
+        kwargs.update(overrides)
+        with transaction.atomic():
+            new_instance, raw_key = type(self).generate_key(prefix=prefix, **kwargs)
+            self.revoke(reason="rotated")
+        return new_instance, raw_key
 
     def record_usage(self) -> None:
         """Mark this key as used just now, throttled by ``LAST_USED_THRESHOLD``.
