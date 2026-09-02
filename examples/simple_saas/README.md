@@ -61,6 +61,21 @@ the request belonged to, `request.tenant` was already the right one.
 Try dropping the `Authorization` header, using a garbage key, or a key with
 the wrong scope — each fails with a 401 or 403 rather than a stack trace.
 
+## Rotating and revoking the demo key
+
+The `tenant_api_key_rotate` and `tenant_api_key_revoke` management commands
+work here unchanged -- they only need `TENANT_API_KEY_MODEL`, which this
+project's `settings.py` already sets:
+
+```bash
+python manage.py tenant_api_key_rotate <prefix>          # prints a new raw key, revokes the old one
+python manage.py tenant_api_key_revoke <prefix> --reason="testing"
+```
+
+Use the prefix printed by `create_demo_key` (the part before the dot).
+After rotating, the old `curl` command starts returning 401; the new one
+printed by the rotate command works in its place.
+
 ## What this is (and isn't)
 
 This is a demonstration of the library's request/response flow, not a
