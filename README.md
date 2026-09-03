@@ -7,7 +7,7 @@
 [![Latest on Django Packages](https://img.shields.io/badge/Django_Packages-django--tenant--apikeys-8c3c26.svg)](https://djangopackages.org/packages/p/django-tenant-apikeys/)
 
 <p align="center">
-  <img src="docs/images/banner.png" alt="django-tenant-apikeys" width="900">
+  <img src="https://raw.githubusercontent.com/stackadnan/django-tenant-apikeys/main/docs/images/banner.png" alt="django-tenant-apikeys" width="900">
 </p>
 
 <p align="center">
