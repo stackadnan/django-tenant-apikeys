@@ -12,4 +12,4 @@ class OrganizationAdmin(admin.ModelAdmin):
 
 @admin.register(OrganizationAPIKey)
 class OrganizationAPIKeyAdmin(TenantAPIKeyAdmin):
-    pass
+    list_filter = TenantAPIKeyAdmin.list_filter + ("tenant",)

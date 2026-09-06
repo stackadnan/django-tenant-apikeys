@@ -31,8 +31,16 @@ class TenantAPIKeyAdmin(_TenantAPIKeyAdminBase):
     never written to a form field or displayed again afterward.
     """
 
-    list_display = ("name", "masked_key", "status", "created_at", "expires_at", "last_used_at")
-    list_filter = ("is_active", "created_at")
+    list_display = (
+        "name",
+        "masked_key",
+        "environment",
+        "status",
+        "created_at",
+        "expires_at",
+        "last_used_at",
+    )
+    list_filter = ("is_active", "environment", "created_at", "expires_at")
     search_fields = ("name", "prefix")
     readonly_fields = (
         "prefix",
