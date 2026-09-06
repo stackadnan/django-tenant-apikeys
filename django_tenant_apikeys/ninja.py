@@ -49,6 +49,28 @@ class TenantAPIKeyAuth(APIKeyHeader):
             if not request.auth.has_scope("orders:read"):
                 return 403, {"detail": "missing required scope"}
             return request.tenant.orders.all()
+
+    Ninja has no permission-class system to hook policy checks into the way
+    DRF does (see ``HasAllowedIP``/``WithinRateLimit`` there), so an IP
+    allowlist or rate limit is enforced the same way scopes are here --
+    inline, using the same shared functions DRF's permission classes call::
+
+        from django.http import JsonResponse
+
+        from django_tenant_apikeys.ip import get_client_ip
+        from django_tenant_apikeys.ratelimit import check_rate_limit
+
+        @api.get("/orders")
+        def list_orders(request):
+            if not request.auth.is_ip_allowed(get_client_ip(request)):
+                return JsonResponse({"detail": "IP not allowed"}, status=403)
+            result = check_rate_limit(request.auth)
+            if not result.allowed:
+                return JsonResponse(
+                    {"detail": "rate limit exceeded", "retry_after": result.retry_after},
+                    status=429,
+                )
+            ...
     """
 
     param_name = "Authorization"
