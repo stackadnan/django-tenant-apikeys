@@ -10,7 +10,7 @@ import pytest
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from django_tenant_apikeys.models import generate_api_key, hash_key
+from django_tenant_apikeys.models import Environment, generate_api_key, hash_key
 from tests.models import Tenant, TenantAPIKey, UnlinkedAPIKey
 
 pytestmark = pytest.mark.django_db
@@ -72,6 +72,27 @@ class TestGenerateAPIKey:
         with pytest.raises(ValueError, match="19 characters long"):
             generate_api_key(prefix="a" * 19)
 
+    def test_default_environment_uses_live_segment(self) -> None:
+        full_key, key_prefix, _hashed_key = generate_api_key()
+        assert "_live_" in key_prefix
+        assert full_key.startswith(key_prefix)
+
+    def test_staging_environment_uses_live_segment(self) -> None:
+        _full_key, key_prefix, _hashed_key = generate_api_key(environment=Environment.STAGING)
+        assert "_live_" in key_prefix
+
+    def test_test_environment_uses_test_segment(self) -> None:
+        _full_key, key_prefix, _hashed_key = generate_api_key(environment=Environment.TEST)
+        assert "_test_" in key_prefix
+
+    def test_development_environment_uses_test_segment(self) -> None:
+        _full_key, key_prefix, _hashed_key = generate_api_key(environment=Environment.DEVELOPMENT)
+        assert "_test_" in key_prefix
+
+    def test_unknown_environment_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="environment must be one of"):
+            generate_api_key(environment="sandbox")
+
 
 class TestGenerateKeyClassmethod:
     def test_saves_and_returns_instance_and_raw_key(self, tenant: Tenant) -> None:
@@ -94,6 +115,39 @@ class TestGenerateKeyClassmethod:
     def test_default_scopes_is_empty_list(self, tenant: Tenant) -> None:
         instance, _raw_key = TenantAPIKey.generate_key(name="CI key", tenant=tenant)
         assert instance.scopes == []
+
+    def test_default_environment_is_production(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(name="k", tenant=tenant)
+        assert instance.environment == Environment.PRODUCTION
+        assert "_live_" in instance.prefix
+
+    def test_environment_can_be_set_explicitly(self, tenant: Tenant) -> None:
+        instance, raw_key = TenantAPIKey.generate_key(
+            name="k", tenant=tenant, environment=Environment.TEST
+        )
+        assert instance.environment == Environment.TEST
+        assert "_test_" in instance.prefix
+        assert "_test_" in raw_key
+
+    def test_default_rate_limit_is_unset(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(name="k", tenant=tenant)
+        assert instance.rate_limit is None
+        assert instance.rate_limit_window == "minute"
+
+    def test_default_allowed_ips_is_empty_list(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(name="k", tenant=tenant)
+        assert instance.allowed_ips == []
+
+    def test_default_metadata_is_empty_dict(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(name="k", tenant=tenant)
+        assert instance.metadata == {}
+
+    def test_metadata_round_trips_through_the_database(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(
+            name="k", tenant=tenant, metadata={"service": "billing", "owner": "payments"}
+        )
+        instance.refresh_from_db()
+        assert instance.metadata == {"service": "billing", "owner": "payments"}
 
 
 class TestScopeValidation:
@@ -120,6 +174,87 @@ class TestScopeValidation:
             name="k", tenant=tenant, scopes=["orders:read", "orders:read"]
         )
         assert instance.has_scope("orders:read") is True
+
+
+class TestAllowedIpsValidation:
+    def test_rejects_a_bare_string_instead_of_a_list(self, tenant: Tenant) -> None:
+        with pytest.raises(ValueError, match="must be a list"):
+            TenantAPIKey.generate_key(name="k", tenant=tenant, allowed_ips="203.0.113.10")
+
+    def test_rejects_a_non_string_element(self, tenant: Tenant) -> None:
+        with pytest.raises(ValueError, match="non-empty string"):
+            TenantAPIKey.generate_key(name="k", tenant=tenant, allowed_ips=[123])
+
+    def test_rejects_an_empty_string_element(self, tenant: Tenant) -> None:
+        with pytest.raises(ValueError, match="non-empty string"):
+            TenantAPIKey.generate_key(name="k", tenant=tenant, allowed_ips=[""])
+
+    def test_rejects_a_malformed_ip(self, tenant: Tenant) -> None:
+        with pytest.raises(ValueError, match="not a valid IP address or CIDR"):
+            TenantAPIKey.generate_key(name="k", tenant=tenant, allowed_ips=["not-an-ip"])
+
+    def test_rejects_a_malformed_cidr(self, tenant: Tenant) -> None:
+        with pytest.raises(ValueError, match="not a valid IP address or CIDR"):
+            TenantAPIKey.generate_key(name="k", tenant=tenant, allowed_ips=["203.0.113.0/99"])
+
+    def test_accepts_individual_ipv4_addresses(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(
+            name="k", tenant=tenant, allowed_ips=["203.0.113.10"]
+        )
+        assert instance.allowed_ips == ["203.0.113.10"]
+
+    def test_accepts_ipv4_cidr_networks(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(
+            name="k", tenant=tenant, allowed_ips=["203.0.113.0/24"]
+        )
+        assert instance.allowed_ips == ["203.0.113.0/24"]
+
+    def test_accepts_individual_ipv6_addresses(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(
+            name="k", tenant=tenant, allowed_ips=["2001:db8::1"]
+        )
+        assert instance.allowed_ips == ["2001:db8::1"]
+
+    def test_accepts_ipv6_cidr_networks(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(
+            name="k", tenant=tenant, allowed_ips=["2001:db8::/32"]
+        )
+        assert instance.allowed_ips == ["2001:db8::/32"]
+
+
+class TestRateLimitValidation:
+    def test_rejects_a_zero_rate_limit(self, tenant: Tenant) -> None:
+        with pytest.raises(ValueError, match="positive integer"):
+            TenantAPIKey.generate_key(name="k", tenant=tenant, rate_limit=0)
+
+    def test_rejects_a_negative_rate_limit(self, tenant: Tenant) -> None:
+        with pytest.raises(ValueError, match="positive integer"):
+            TenantAPIKey.generate_key(name="k", tenant=tenant, rate_limit=-1)
+
+    def test_rejects_a_non_integer_rate_limit(self, tenant: Tenant) -> None:
+        with pytest.raises(ValueError, match="positive integer"):
+            TenantAPIKey.generate_key(name="k", tenant=tenant, rate_limit="100")
+
+    def test_rejects_a_boolean_rate_limit(self, tenant: Tenant) -> None:
+        with pytest.raises(ValueError, match="positive integer"):
+            TenantAPIKey.generate_key(name="k", tenant=tenant, rate_limit=True)
+
+    def test_rejects_an_unknown_window(self, tenant: Tenant) -> None:
+        with pytest.raises(ValueError, match="rate_limit_window must be one of"):
+            TenantAPIKey.generate_key(
+                name="k", tenant=tenant, rate_limit=10, rate_limit_window="fortnight"
+            )
+
+    def test_rate_limit_without_a_window_uses_the_default(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(name="k", tenant=tenant, rate_limit=10)
+        assert instance.rate_limit_window == "minute"
+
+    def test_accepts_each_valid_window(self, tenant: Tenant) -> None:
+        for window in ("second", "minute", "hour", "day"):
+            instance, _raw_key = TenantAPIKey.generate_key(
+                name="k", tenant=tenant, rate_limit=10, rate_limit_window=window
+            )
+            assert instance.rate_limit_window == window
 
 
 class TestVerifyKey:
@@ -390,6 +525,53 @@ class TestRotate:
         with pytest.raises(ValueError, match="inactive or expired"):
             instance.rotate()
 
+    def test_environment_is_preserved_and_reflected_in_the_new_prefix(
+        self, tenant: Tenant
+    ) -> None:
+        old_instance, _old_raw_key = TenantAPIKey.generate_key(
+            name="k", tenant=tenant, environment=Environment.TEST
+        )
+
+        new_instance, new_raw_key = old_instance.rotate()
+
+        assert new_instance.environment == Environment.TEST
+        assert "_test_" in new_instance.prefix
+        assert "_test_" in new_raw_key
+
+    def test_rate_limit_is_preserved_by_default(self, tenant: Tenant) -> None:
+        old_instance, _old_raw_key = TenantAPIKey.generate_key(
+            name="k", tenant=tenant, rate_limit=100, rate_limit_window="hour"
+        )
+
+        new_instance, _new_raw_key = old_instance.rotate()
+
+        assert new_instance.rate_limit == 100
+        assert new_instance.rate_limit_window == "hour"
+
+    def test_allowed_ips_are_an_independent_list_not_shared_with_the_old_row(
+        self, tenant: Tenant
+    ) -> None:
+        old_instance, _old_raw_key = TenantAPIKey.generate_key(
+            name="k", tenant=tenant, allowed_ips=["203.0.113.10"]
+        )
+
+        new_instance, _new_raw_key = old_instance.rotate()
+        new_instance.allowed_ips.append("203.0.113.20")
+
+        assert old_instance.allowed_ips == ["203.0.113.10"]
+
+    def test_metadata_is_an_independent_dict_not_shared_with_the_old_row(
+        self, tenant: Tenant
+    ) -> None:
+        old_instance, _old_raw_key = TenantAPIKey.generate_key(
+            name="k", tenant=tenant, metadata={"owner": "payments"}
+        )
+
+        new_instance, _new_raw_key = old_instance.rotate()
+        new_instance.metadata["owner"] = "billing"
+
+        assert old_instance.metadata == {"owner": "payments"}
+
 
 class TestRecordUsage:
     def test_sets_last_used_at_when_previously_unset(self, tenant: Tenant) -> None:
@@ -463,6 +645,79 @@ class TestHasScope:
             name="k", tenant=tenant, scopes=["orders:*"]
         )
         assert instance.has_scope("orders") is False
+
+
+class TestIsIpAllowed:
+    def test_unrestricted_key_allows_any_ip(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(name="k", tenant=tenant)
+        assert instance.is_ip_allowed("203.0.113.10") is True
+        assert instance.is_ip_allowed("2001:db8::1") is True
+
+    def test_exact_ipv4_match(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(
+            name="k", tenant=tenant, allowed_ips=["203.0.113.10"]
+        )
+        assert instance.is_ip_allowed("203.0.113.10") is True
+
+    def test_ipv4_mismatch(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(
+            name="k", tenant=tenant, allowed_ips=["203.0.113.10"]
+        )
+        assert instance.is_ip_allowed("203.0.113.11") is False
+
+    def test_ipv4_cidr_match(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(
+            name="k", tenant=tenant, allowed_ips=["203.0.113.0/24"]
+        )
+        assert instance.is_ip_allowed("203.0.113.200") is True
+
+    def test_ipv4_cidr_mismatch(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(
+            name="k", tenant=tenant, allowed_ips=["203.0.113.0/24"]
+        )
+        assert instance.is_ip_allowed("198.51.100.1") is False
+
+    def test_exact_ipv6_match(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(
+            name="k", tenant=tenant, allowed_ips=["2001:db8::1"]
+        )
+        assert instance.is_ip_allowed("2001:db8::1") is True
+        assert instance.is_ip_allowed("2001:db8::2") is False
+
+    def test_ipv6_cidr_match(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(
+            name="k", tenant=tenant, allowed_ips=["2001:db8::/32"]
+        )
+        assert instance.is_ip_allowed("2001:db8:1234::1") is True
+        assert instance.is_ip_allowed("2001:db9::1") is False
+
+    def test_multiple_networks_any_match_allows(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(
+            name="k", tenant=tenant, allowed_ips=["203.0.113.10", "198.51.100.0/24"]
+        )
+        assert instance.is_ip_allowed("203.0.113.10") is True
+        assert instance.is_ip_allowed("198.51.100.5") is True
+        assert instance.is_ip_allowed("192.0.2.1") is False
+
+    def test_malformed_client_ip_is_denied(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(
+            name="k", tenant=tenant, allowed_ips=["203.0.113.10"]
+        )
+        assert instance.is_ip_allowed("not-an-ip") is False
+
+    def test_malformed_stored_entry_is_skipped_not_raised(self, tenant: Tenant) -> None:
+        # generate_key() already rejects this, so simulate a row that was
+        # edited directly (e.g. a raw ORM update) to bypass that validation.
+        instance, _raw_key = TenantAPIKey.generate_key(
+            name="k", tenant=tenant, allowed_ips=["203.0.113.10"]
+        )
+        TenantAPIKey.objects.filter(pk=instance.pk).update(
+            allowed_ips=["garbage", "203.0.113.10"]
+        )
+        instance.refresh_from_db()
+
+        assert instance.is_ip_allowed("203.0.113.10") is True
+        assert instance.is_ip_allowed("198.51.100.1") is False
 
 
 class TestManager:
