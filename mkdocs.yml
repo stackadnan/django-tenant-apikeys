@@ -1,0 +1,76 @@
+site_name: django-tenant-apikeys
+site_description: >-
+  Multi-tenant API key authentication for Django, with scopes, IP allowlists,
+  rate limiting, and first-class Django REST Framework and Django Ninja support.
+site_url: https://stackadnan.github.io/django-tenant-apikeys/
+repo_url: https://github.com/stackadnan/django-tenant-apikeys
+repo_name: stackadnan/django-tenant-apikeys
+edit_uri: edit/main/docs/
+copyright: Copyright &copy; stackadnan
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.top
+    - navigation.footer
+    - content.code.copy
+    - content.action.edit
+    - search.suggest
+    - toc.follow
+
+markdown_extensions:
+  - admonition
+  - footnotes
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - Installation: installation.md
+      - Quickstart: quickstart.md
+      - Configuration: configuration.md
+  - Core concepts:
+      - Authentication: authentication.md
+      - Multi-tenancy: multi-tenancy.md
+      - Scopes: scopes.md
+      - Key lifecycle: key-lifecycle.md
+  - Policies:
+      - Environments: environments.md
+      - IP restrictions: ip-restrictions.md
+      - Rate limiting: rate-limiting.md
+      - Metadata: metadata.md
+  - Framework integrations:
+      - Django REST Framework: django-rest-framework.md
+      - Django Ninja: django-ninja.md
+  - Operating it:
+      - Admin: admin.md
+      - Management commands: management-commands.md
+      - Security: security.md
+      - Testing: testing.md
+      - Troubleshooting: troubleshooting.md
+  - Reference:
+      - API reference: api-reference.md

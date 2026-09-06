@@ -24,6 +24,9 @@ htmlcov/
 # Example project's local database
 examples/**/db.sqlite3
 
+# Built documentation site (mkdocs build)
+/site/
+
 # Editors
 .vscode/
 .idea/

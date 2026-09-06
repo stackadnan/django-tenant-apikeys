@@ -69,10 +69,14 @@ dev = [
     "ruff>=0.4",
     "build>=1.0",
 ]
+docs = [
+    "mkdocs>=1.6",
+    "mkdocs-material>=9.5",
+]
 
 [project.urls]
 Homepage = "https://github.com/stackadnan/django-tenant-apikeys"
-Documentation = "https://github.com/stackadnan/django-tenant-apikeys#readme"
+Documentation = "https://stackadnan.github.io/django-tenant-apikeys/"
 Repository = "https://github.com/stackadnan/django-tenant-apikeys"
 Issues = "https://github.com/stackadnan/django-tenant-apikeys/issues"
 Changelog = "https://github.com/stackadnan/django-tenant-apikeys/releases"
