@@ -20,6 +20,14 @@ DATABASES = {
     }
 }
 
+# LocMemCache -- fine for the test suite, but see CacheRateLimitBackend's
+# docstring: it only enforces rate limits within a single process.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+    }
+}
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
