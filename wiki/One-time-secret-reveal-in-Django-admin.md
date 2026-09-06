@@ -101,6 +101,6 @@ admin, not replacing `save_model` or `masked_key` yourself.
 
 ## Try it
 
-- Full API reference: the [README](https://github.com/stackadnan/django-tenant-apikeys#readme)
+- Full API reference: the [documentation](https://stackadnan.github.io/django-tenant-apikeys/)
 - A working end-to-end project, including its own `OrganizationAPIKeyAdmin`: [`examples/simple_saas/`](https://github.com/stackadnan/django-tenant-apikeys/tree/main/examples/simple_saas)
 - See also: [Django multi-tenant API key authentication](https://github.com/stackadnan/django-tenant-apikeys/wiki/Django-multi%E2%80%90tenant-API-key-authentication)

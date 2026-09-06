@@ -113,6 +113,6 @@ it to a different app — same reason the DRF backend does it this way.
 
 ## Try it
 
-- Full quickstart and API reference: the [README](https://github.com/stackadnan/django-tenant-apikeys#readme)
+- Full quickstart and API reference: the [documentation](https://stackadnan.github.io/django-tenant-apikeys/)
 - A working end-to-end project (uses DRF, but every method called above works identically from Ninja): [`examples/simple_saas/`](https://github.com/stackadnan/django-tenant-apikeys/tree/main/examples/simple_saas)
 - See also: [Scoping API keys per tenant in Django REST Framework](https://github.com/stackadnan/django-tenant-apikeys/wiki/Scoping-API-keys-per-tenant-in-Django-REST-Framework) — the same `has_scope()` design, from the DRF side

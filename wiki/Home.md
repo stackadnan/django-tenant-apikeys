@@ -3,13 +3,17 @@
 [django-tenant-apikeys](https://github.com/stackadnan/django-tenant-apikeys)
 is a small, framework-agnostic package for issuing API keys to the
 tenants/organizations in a multi-tenant Django app — prefix + hashed
-secret, per-key scopes, expiration, and throttled last-used tracking, with
-first-class Django REST Framework support and a documented Django Ninja
-recipe. For install instructions and the full API reference, start with
-the [README](https://github.com/stackadnan/django-tenant-apikeys#readme).
+secret, per-key scopes, IP allowlists, rate limits, expiration, and
+throttled last-used tracking, with first-class Django REST Framework and
+Django Ninja support.
 
-This wiki goes deeper on specific topics than the README does. Suggested
-reading order below; jump straight to whichever one you need otherwise.
+**The primary documentation lives at
+[stackadnan.github.io/django-tenant-apikeys](https://stackadnan.github.io/django-tenant-apikeys/)**
+— start there for installation, a quickstart, and the full API reference.
+This wiki is a set of longer, standalone articles going deeper on specific
+topics than the reference docs do — design reasoning, comparisons, and
+worked examples. Suggested reading order below; jump straight to whichever
+one you need otherwise.
 
 ## Start here
 
@@ -38,7 +42,8 @@ reading order below; jump straight to whichever one you need otherwise.
 
 ## Elsewhere
 
-- [Full README and API reference](https://github.com/stackadnan/django-tenant-apikeys#readme)
+- [Full documentation](https://stackadnan.github.io/django-tenant-apikeys/) — installation, quickstart, configuration, and the API reference
+- [README](https://github.com/stackadnan/django-tenant-apikeys#readme)
 - [A working end-to-end example project](https://github.com/stackadnan/django-tenant-apikeys/tree/main/examples/simple_saas)
 - [Issues](https://github.com/stackadnan/django-tenant-apikeys/issues) — bug reports and feature requests
 - [Changelog](https://github.com/stackadnan/django-tenant-apikeys/blob/main/CHANGELOG.md)

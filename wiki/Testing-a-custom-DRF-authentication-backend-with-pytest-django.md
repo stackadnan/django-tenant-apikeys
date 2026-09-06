@@ -162,5 +162,5 @@ test's broken setting leaking into the next.
 ## Try it
 
 - Full test suite: [`tests/test_authentication.py`](https://github.com/stackadnan/django-tenant-apikeys/blob/main/tests/test_authentication.py)
-- Full API reference: the [README](https://github.com/stackadnan/django-tenant-apikeys#readme)
+- Full API reference: the [documentation](https://stackadnan.github.io/django-tenant-apikeys/)
 - See also: [Django multi-tenant API key authentication](https://github.com/stackadnan/django-tenant-apikeys/wiki/Django-multi%E2%80%90tenant-API-key-authentication)

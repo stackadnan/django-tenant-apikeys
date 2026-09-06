@@ -118,5 +118,5 @@ depth.
 
 ## Try it
 
-- Full quickstart and API reference: the [README](https://github.com/stackadnan/django-tenant-apikeys#readme)
+- Full quickstart and API reference: the [documentation](https://stackadnan.github.io/django-tenant-apikeys/)
 - A working end-to-end project: [`examples/simple_saas/`](https://github.com/stackadnan/django-tenant-apikeys/tree/main/examples/simple_saas)

@@ -113,5 +113,5 @@ time, covering the opposite branch.
 ## Try it
 
 - Full test suite: [`tests/test_models.py`](https://github.com/stackadnan/django-tenant-apikeys/blob/main/tests/test_models.py)
-- Full API reference: the [README](https://github.com/stackadnan/django-tenant-apikeys#readme)
+- Full API reference: the [documentation](https://stackadnan.github.io/django-tenant-apikeys/)
 - See also: [Rotating and expiring API keys](https://github.com/stackadnan/django-tenant-apikeys/wiki/Rotating-and-expiring-API-keys-in-Django-without-breaking-existing-clients)

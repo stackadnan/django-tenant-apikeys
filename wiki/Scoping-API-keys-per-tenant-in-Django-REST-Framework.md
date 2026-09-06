@@ -115,5 +115,5 @@ A few practical rules that hold up as an API grows:
 ## Try it
 
 - `pip install django-tenant-apikeys[drf]`
-- Full API reference: the [README](https://github.com/stackadnan/django-tenant-apikeys#readme)
+- Full API reference: the [documentation](https://stackadnan.github.io/django-tenant-apikeys/)
 - A working end-to-end project: [`examples/simple_saas/`](https://github.com/stackadnan/django-tenant-apikeys/tree/main/examples/simple_saas)

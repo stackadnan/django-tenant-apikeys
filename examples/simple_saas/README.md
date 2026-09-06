@@ -81,5 +81,6 @@ printed by the rotate command works in its place.
 This is a demonstration of the library's request/response flow, not a
 template for a real SaaS backend — there's no user accounts, no signup flow,
 no per-tenant data model beyond the key itself. See the
-[main README](../../README.md) for the full API reference and the security
-notes worth reading before using this in something real.
+[documentation](https://stackadnan.github.io/django-tenant-apikeys/) for the
+full API reference, and [Security](https://stackadnan.github.io/django-tenant-apikeys/security/)
+for the notes worth reading before using this in something real.

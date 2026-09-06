@@ -19,7 +19,7 @@ The `dev` extra pulls in everything needed to run and check the project:
 `django-ninja`, `mypy`, `django-stubs`, `djangorestframework-stubs`, and
 `ruff`. It does *not* include `psycopg` -- install `psycopg[binary]`
 yourself if you want to run the suite against PostgreSQL locally (see
-[Running the tests](README.md#running-the-tests) in the main README).
+[Testing](https://stackadnan.github.io/django-tenant-apikeys/testing/)).
 
 ## Running the checks
 
@@ -76,8 +76,9 @@ those as public issues.
 ## What's out of scope
 
 Before proposing a new feature, check the
-[FAQ](README.md#faq) and the
-[SECURITY.md scope section](SECURITY.md#scope) — a few things (rate
-limiting, multi-tenant keys, async views) are deliberately left to the
-consuming project rather than built in. If you think one of those should
-change, open an issue to discuss it before sending a PR.
+[docs](https://stackadnan.github.io/django-tenant-apikeys/) and the
+[SECURITY.md scope section](SECURITY.md#scope) — a few things (brute-force
+protection on the authentication endpoint itself, async views, schema-per-
+tenant support) are deliberately left to the consuming project rather than
+built in. If you think one of those should change, open an issue to
+discuss it before sending a PR.

@@ -46,10 +46,14 @@ class OrganizationAPIKey(AbstractTenantAPIKey):
     )
 ```
 
-Every key is generated as `<prefix>_live_<random>.{secret}` — the part
-before the dot (`key_prefix`) is a cleartext, indexed lookup value with no
-real entropy; the part after the dot is 256 bits of randomness that's
-**only ever stored as a SHA-256 hash**:
+Every key is generated as `<prefix>_live_<random>.{secret}` (or
+`<prefix>_test_<random>.{secret}` for a key whose `environment` is
+`"development"`/`"test"` — see the
+[environments docs](https://stackadnan.github.io/django-tenant-apikeys/environments/)
+for the full mapping) — the part before the dot (`key_prefix`) is a
+cleartext, indexed lookup value with no real entropy; the part after the
+dot is 256 bits of randomness that's **only ever stored as a SHA-256
+hash**:
 
 ```python
 instance, raw_key = OrganizationAPIKey.generate_key(
@@ -122,12 +126,12 @@ authenticated key is allowed through.
 The model, key generation, and hashing live in `django_tenant_apikeys.models`
 with no DRF import at all — `TENANT_API_KEY_MODEL` and `get_api_key_model()`
 work from a plain view or a
-[Django Ninja](https://github.com/stackadnan/django-tenant-apikeys#django-ninja-integration)
+[Django Ninja](https://stackadnan.github.io/django-tenant-apikeys/django-ninja/)
 auth callable just as well.
 
 ## Try it
 
 - `pip install django-tenant-apikeys[drf]`
 - Full quickstart and API reference: the
-  [README](https://github.com/stackadnan/django-tenant-apikeys#readme)
+  [documentation](https://stackadnan.github.io/django-tenant-apikeys/)
 - A working end-to-end project: [`examples/simple_saas/`](https://github.com/stackadnan/django-tenant-apikeys/tree/main/examples/simple_saas)
