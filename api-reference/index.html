@@ -1,0 +1,1810 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Multi-tenant API key authentication for Django, with scopes, IP allowlists, rate limiting, and first-class Django REST Framework and Django Ninja support.">
+      
+      
+      
+        <link rel="canonical" href="https://stackadnan.github.io/django-tenant-apikeys/api-reference/">
+      
+      
+        <link rel="prev" href="../troubleshooting/">
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>API reference - django-tenant-apikeys</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#api-reference" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="django-tenant-apikeys" class="md-header__button md-logo" aria-label="django-tenant-apikeys" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            django-tenant-apikeys
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              API reference
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/stackadnan/django-tenant-apikeys" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    stackadnan/django-tenant-apikeys
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="django-tenant-apikeys" class="md-nav__button md-logo" aria-label="django-tenant-apikeys" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    django-tenant-apikeys
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/stackadnan/django-tenant-apikeys" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    stackadnan/django-tenant-apikeys
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core concepts
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Core concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../authentication/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Authentication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../multi-tenancy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multi-tenancy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../scopes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scopes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../key-lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Key lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Policies
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Policies
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../environments/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environments
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ip-restrictions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    IP restrictions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../rate-limiting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Rate limiting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../metadata/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Metadata
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Framework integrations
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Framework integrations
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../django-rest-framework/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Django REST Framework
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../django-ninja/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Django Ninja
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operating it
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Operating it
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../admin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Admin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../management-commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Management commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API reference
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#django_tenant_apikeysmodels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        django_tenant_apikeys.models
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="django_tenant_apikeys.models">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#abstracttenantapikey" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AbstractTenantAPIKey
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tenantapikeymanager" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TenantAPIKeyManager
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ratelimitwindow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RateLimitWindow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#module-level-functions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Module-level functions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#django_tenant_apikeysip" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        django_tenant_apikeys.ip
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#django_tenant_apikeysratelimit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        django_tenant_apikeys.ratelimit
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#django_tenant_apikeysauthentication-needs-drf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        django_tenant_apikeys.authentication (needs [drf])
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#django_tenant_apikeyspermissions-needs-drf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        django_tenant_apikeys.permissions (needs [drf])
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#django_tenant_apikeysninja-needs-ninja" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        django_tenant_apikeys.ninja (needs [ninja])
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#django_tenant_apikeysadmin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        django_tenant_apikeys.admin
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#management-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Management commands
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#django_tenant_apikeysmodels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        django_tenant_apikeys.models
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="django_tenant_apikeys.models">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#abstracttenantapikey" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AbstractTenantAPIKey
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tenantapikeymanager" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TenantAPIKeyManager
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ratelimitwindow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RateLimitWindow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#module-level-functions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Module-level functions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#django_tenant_apikeysip" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        django_tenant_apikeys.ip
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#django_tenant_apikeysratelimit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        django_tenant_apikeys.ratelimit
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#django_tenant_apikeysauthentication-needs-drf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        django_tenant_apikeys.authentication (needs [drf])
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#django_tenant_apikeyspermissions-needs-drf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        django_tenant_apikeys.permissions (needs [drf])
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#django_tenant_apikeysninja-needs-ninja" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        django_tenant_apikeys.ninja (needs [ninja])
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#django_tenant_apikeysadmin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        django_tenant_apikeys.admin
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#management-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Management commands
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/stackadnan/django-tenant-apikeys/edit/main/docs/api-reference.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="api-reference">API reference<a class="headerlink" href="#api-reference" title="Permanent link">&para;</a></h1>
+<p>The public surface of every module. Anything not listed here (names
+prefixed with <code>_</code>) is an internal implementation detail, not covered by
+this package's compatibility guarantees.</p>
+<h2 id="django_tenant_apikeysmodels"><code>django_tenant_apikeys.models</code><a class="headerlink" href="#django_tenant_apikeysmodels" title="Permanent link">&para;</a></h2>
+<p>No DRF or Ninja dependency — importable with just the base package.</p>
+<h3 id="abstracttenantapikey"><code>AbstractTenantAPIKey</code><a class="headerlink" href="#abstracttenantapikey" title="Permanent link">&para;</a></h3>
+<p>Abstract model. Subclass it and add a <code>tenant</code> relation (see
+<a href="../multi-tenancy/">Multi-tenancy</a>).</p>
+<p><strong>Fields:</strong> <code>name</code>, <code>prefix</code>, <code>hashed_key</code>, <code>scopes</code>, <code>environment</code>,
+<code>rate_limit</code>, <code>rate_limit_window</code>, <code>allowed_ips</code>, <code>metadata</code>, <code>is_active</code>,
+<code>created_at</code>, <code>expires_at</code>, <code>last_used_at</code>, <code>revoked_at</code>, <code>revoked_reason</code>.</p>
+<p><strong>Class methods</strong></p>
+<ul>
+<li><code>generate_key(cls, *, prefix="tak", **kwargs) -&gt; tuple[instance, raw_key]</code>
+  — creates and saves a new key. <code>**kwargs</code> go straight to the model
+  constructor (<code>name</code>, <code>scopes</code>, <code>expires_at</code>, <code>environment</code>, <code>rate_limit</code>,
+  <code>rate_limit_window</code>, <code>allowed_ips</code>, <code>metadata</code>, a <code>tenant</code> relation,
+  etc). Raises <code>ValueError</code> if <code>scopes</code>/<code>allowed_ips</code> isn't a list of
+  non-empty strings (each <code>allowed_ips</code> entry must also parse as an IP or
+  CIDR network), if <code>rate_limit</code> isn't a positive integer, or if
+  <code>rate_limit_window</code>/<code>environment</code> isn't a valid choice.</li>
+</ul>
+<p><strong>Instance methods</strong></p>
+<ul>
+<li><code>verify_key(self, raw_key: str) -&gt; bool</code> — constant-time check against
+  the stored hash.</li>
+<li><code>has_scope(self, required_scope: str) -&gt; bool</code> — see <a href="../scopes/">Scopes</a>.</li>
+<li><code>is_ip_allowed(self, client_ip: str) -&gt; bool</code> — see
+  <a href="../ip-restrictions/">IP restrictions</a>.</li>
+<li><code>record_usage(self) -&gt; None</code> — updates <code>last_used_at</code>, throttled by
+  <code>LAST_USED_THRESHOLD</code>. Called automatically by both framework
+  integrations on every successful authentication.</li>
+<li><code>revoke(self, *, reason: str = "") -&gt; None</code></li>
+<li><code>reactivate(self) -&gt; None</code></li>
+<li><code>rotate(self, *, prefix="tak", **overrides) -&gt; tuple[instance, raw_key]</code>
+  — raises <code>ValueError</code> if the key is already inactive or expired.</li>
+</ul>
+<p><strong>Properties</strong></p>
+<ul>
+<li><code>is_expired: bool</code></li>
+<li><code>is_valid: bool</code> — <code>is_active and not is_expired</code></li>
+</ul>
+<p><strong>Class attributes</strong></p>
+<ul>
+<li><code>LAST_USED_THRESHOLD: ClassVar[timedelta]</code> — default <code>timedelta(minutes=5)</code>,
+  overridable per subclass.</li>
+</ul>
+<p>See <a href="../key-lifecycle/">Key lifecycle</a> for all of the above in context.</p>
+<h3 id="tenantapikeymanager"><code>TenantAPIKeyManager</code><a class="headerlink" href="#tenantapikeymanager" title="Permanent link">&para;</a></h3>
+<p>The default manager (<code>.objects</code>) on <code>AbstractTenantAPIKey</code>.</p>
+<ul>
+<li><code>get_from_key(self, raw_key: str) -&gt; AbstractTenantAPIKey</code> — indexed
+  prefix lookup only; does <strong>not</strong> verify the secret. Call <code>verify_key()</code>
+  on the result. Raises <code>DoesNotExist</code> if no row matches.</li>
+<li><code>get_usable_keys(self) -&gt; QuerySet[AbstractTenantAPIKey]</code> — active,
+  unexpired keys only.</li>
+</ul>
+<h3 id="environment"><code>Environment</code><a class="headerlink" href="#environment" title="Permanent link">&para;</a></h3>
+<p><code>TextChoices</code>: <code>PRODUCTION</code> (default), <code>STAGING</code>, <code>DEVELOPMENT</code>, <code>TEST</code>. See
+<a href="../environments/">Environments</a>.</p>
+<h3 id="ratelimitwindow"><code>RateLimitWindow</code><a class="headerlink" href="#ratelimitwindow" title="Permanent link">&para;</a></h3>
+<p><code>TextChoices</code>: <code>SECOND</code>, <code>MINUTE</code> (default), <code>HOUR</code>, <code>DAY</code>. See
+<a href="../rate-limiting/">Rate limiting</a>.</p>
+<h3 id="module-level-functions">Module-level functions<a class="headerlink" href="#module-level-functions" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>generate_api_key(prefix: str = "tak", *, environment: str = "production") -&gt; tuple[str, str, str]</code>
+  — returns <code>(full_key, key_prefix, hashed_key)</code>. Raises <code>ValueError</code> if
+  <code>prefix</code> is too long to fit <code>AbstractTenantAPIKey.prefix</code>'s
+  <code>max_length=32</code>, or if <code>environment</code> isn't a valid choice.</li>
+<li><code>hash_key(raw_key: str) -&gt; str</code> — SHA-256 hex digest of <code>raw_key</code>.</li>
+<li><code>get_api_key_model() -&gt; type[AbstractTenantAPIKey]</code> — resolves
+  <code>settings.TENANT_API_KEY_MODEL</code>. Raises <code>ImproperlyConfigured</code> if unset
+  or invalid.</li>
+</ul>
+<h2 id="django_tenant_apikeysip"><code>django_tenant_apikeys.ip</code><a class="headerlink" href="#django_tenant_apikeysip" title="Permanent link">&para;</a></h2>
+<p>No optional dependency required.</p>
+<ul>
+<li><code>get_client_ip(request) -&gt; str</code> — see
+  <a href="../ip-restrictions/#resolving-the-clients-ip-from-a-request">IP restrictions</a>.</li>
+</ul>
+<h2 id="django_tenant_apikeysratelimit"><code>django_tenant_apikeys.ratelimit</code><a class="headerlink" href="#django_tenant_apikeysratelimit" title="Permanent link">&para;</a></h2>
+<p>No optional dependency required.</p>
+<ul>
+<li><code>check_rate_limit(api_key) -&gt; RateLimitResult</code> — records one request and
+  checks it against <code>api_key.rate_limit</code>. See
+  <a href="../rate-limiting/#checking-the-limit">Rate limiting</a>.</li>
+<li><code>RateLimitResult</code> — a frozen dataclass: <code>allowed: bool</code>, <code>limit: int | None</code>,
+  <code>remaining: int | None</code>, <code>reset_at: int | None</code> (Unix timestamp),
+  <code>retry_after: int | None</code> (seconds; set only when <code>allowed</code> is <code>False</code>).
+  The last four are all <code>None</code> when the key has no <code>rate_limit</code> configured.</li>
+<li><code>RateLimitBackend</code> — the <code>Protocol</code> a custom backend implements: one
+  method, <code>hit(key: str, limit: int, window_seconds: int) -&gt; RateLimitResult</code>.</li>
+<li><code>CacheRateLimitBackend(cache: BaseCache | None = None)</code> — the default
+  backend. See <a href="../rate-limiting/#how-the-default-backend-counts-requests">Rate limiting</a>.</li>
+<li><code>get_rate_limit_backend() -&gt; RateLimitBackend</code> — resolves
+  <code>TENANT_API_KEY_RATE_LIMIT_BACKEND</code>, defaulting to <code>CacheRateLimitBackend</code>.</li>
+</ul>
+<h2 id="django_tenant_apikeysauthentication-needs-drf"><code>django_tenant_apikeys.authentication</code> (needs <code>[drf]</code>)<a class="headerlink" href="#django_tenant_apikeysauthentication-needs-drf" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>TenantAPIKeyAuthentication</code> — DRF <code>BaseAuthentication</code> subclass.<ul>
+<li><code>keyword = "Api-Key"</code>, <code>model: type[AbstractTenantAPIKey] | None = None</code></li>
+<li><code>get_model(self) -&gt; type[AbstractTenantAPIKey]</code> — returns <code>self.model</code>
+  or <code>get_api_key_model()</code>.</li>
+<li><code>authenticate(self, request) -&gt; tuple[None, AbstractTenantAPIKey] | None</code></li>
+<li><code>authenticate_credentials(self, raw_key, request=None) -&gt; tuple[None, AbstractTenantAPIKey]</code>
+  — the lower-level method <code>authenticate()</code> delegates to after parsing
+  the header; <code>request</code> is optional, and tenant attachment is skipped
+  if it's <code>None</code>.</li>
+<li><code>authenticate_header(self, request) -&gt; str</code></li>
+</ul>
+</li>
+<li><code>API_KEY_KEYWORD</code> — <code>"Api-Key"</code>, the scheme both integrations parse.</li>
+</ul>
+<p>See <a href="../django-rest-framework/">Django REST Framework</a>.</p>
+<h2 id="django_tenant_apikeyspermissions-needs-drf"><code>django_tenant_apikeys.permissions</code> (needs <code>[drf]</code>)<a class="headerlink" href="#django_tenant_apikeyspermissions-needs-drf" title="Permanent link">&para;</a></h2>
+<p>All three are <code>BasePermission</code> subclasses with a <code>has_permission(self, request, view) -&gt; bool</code>
+method, meant to compose in <code>permission_classes</code> — see
+<a href="../django-rest-framework/#how-the-policies-interact">How the policies interact</a>.</p>
+<ul>
+<li><code>HasAPIKeyScope</code> — enforces the view's <code>required_scopes</code> against
+  <code>request.auth.has_scope(...)</code>. See <a href="../scopes/">Scopes</a>.</li>
+<li><code>HasAllowedIP</code> — enforces <code>request.auth.allowed_ips</code>. See
+  <a href="../ip-restrictions/">IP restrictions</a>.</li>
+<li><code>WithinRateLimit</code> — enforces <code>request.auth.rate_limit</code>; raises DRF's
+  <code>Throttled</code> (429) once exceeded, and sets <code>X-RateLimit-*</code> response
+  headers. See <a href="../rate-limiting/">Rate limiting</a>.</li>
+</ul>
+<p>All three return <code>False</code> if <code>request.auth</code> isn't an <code>AbstractTenantAPIKey</code>
+instance, so each is meant to be paired with <code>TenantAPIKeyAuthentication</code>,
+not used alone.</p>
+<h2 id="django_tenant_apikeysninja-needs-ninja"><code>django_tenant_apikeys.ninja</code> (needs <code>[ninja]</code>)<a class="headerlink" href="#django_tenant_apikeysninja-needs-ninja" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>TenantAPIKeyAuth</code> — Ninja <code>APIKeyHeader</code> subclass.<ul>
+<li><code>param_name = "Authorization"</code>, <code>openapi_scheme = "apikey"</code>,
+  <code>model: type[AbstractTenantAPIKey] | None = None</code></li>
+<li><code>get_model(self) -&gt; type[AbstractTenantAPIKey]</code></li>
+<li><code>authenticate(self, request, key: str | None) -&gt; AbstractTenantAPIKey | None</code></li>
+</ul>
+</li>
+</ul>
+<p>See <a href="../django-ninja/">Django Ninja</a>.</p>
+<h2 id="django_tenant_apikeysadmin"><code>django_tenant_apikeys.admin</code><a class="headerlink" href="#django_tenant_apikeysadmin" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>TenantAPIKeyAdmin</code> — <code>ModelAdmin</code> subclass. See <a href="../admin/">Admin</a> for
+  <code>list_display</code>, <code>list_filter</code>, <code>readonly_fields</code>, the <code>masked_key</code>/<code>status</code>
+  display methods, the <code>revoke_selected</code> action, and <code>save_model()</code>'s
+  one-time key reveal.</li>
+</ul>
+<h2 id="management-commands">Management commands<a class="headerlink" href="#management-commands" title="Permanent link">&para;</a></h2>
+<p>Require <code>django_tenant_apikeys</code> in <code>INSTALLED_APPS</code>.</p>
+<ul>
+<li><code>tenant_api_key_revoke &lt;prefix&gt; [--reason TEXT]</code></li>
+<li><code>tenant_api_key_rotate &lt;prefix&gt;</code></li>
+</ul>
+<p>See <a href="../management-commands/">Management commands</a>.</p>
+<h2 id="settings">Settings<a class="headerlink" href="#settings" title="Permanent link">&para;</a></h2>
+<p>See <a href="../configuration/">Configuration</a> for the complete list:
+<code>TENANT_API_KEY_MODEL</code>, <code>TENANT_API_KEY_TRUSTED_PROXY_HEADER</code>,
+<code>TENANT_API_KEY_TRUSTED_PROXY_COUNT</code>,
+<code>TENANT_API_KEY_RATE_LIMIT_CACHE</code>, <code>TENANT_API_KEY_RATE_LIMIT_BACKEND</code>.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../troubleshooting/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Troubleshooting">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Troubleshooting
+              </div>
+            </div>
+          </a>
+        
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; stackadnan
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.top", "navigation.footer", "content.code.copy", "content.action.edit", "search.suggest", "toc.follow"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
