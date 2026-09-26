@@ -92,7 +92,7 @@ class TenantAPIKeyAuth(APIKeyHeader):
         model = self.get_model()
         key_prefix, _sep, _secret = raw_key.partition(".")
         try:
-            api_key = model.objects.get(prefix=key_prefix)
+            api_key: AbstractTenantAPIKey = model.objects.get(prefix=key_prefix)
         except model.DoesNotExist:
             return None
 
