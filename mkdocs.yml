@@ -58,6 +58,7 @@ nav:
       - Multi-tenancy: multi-tenancy.md
       - Scopes: scopes.md
       - Key lifecycle: key-lifecycle.md
+      - Signals and logging: signals.md
   - Policies:
       - Environments: environments.md
       - IP restrictions: ip-restrictions.md

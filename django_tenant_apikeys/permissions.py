@@ -1,5 +1,6 @@
-"""Django REST Framework permission classes: API key scopes, IP allowlists,
-and per-key rate limiting."""
+"""Django REST Framework permission classes: API key scopes (and the
+deprecated IP-allowlist and rate-limit permissions, superseded by
+authentication-time enforcement and ``throttling.TenantAPIKeyThrottle``)."""
 
 from __future__ import annotations
 
@@ -16,6 +17,7 @@ except ImportError as exc:  # pragma: no cover - exercised only when DRF is abse
         "HasAPIKeyScope. Install it with `pip install django-tenant-apikeys[drf]`."
     ) from exc
 
+from .core import MISSING_SCOPE_MESSAGE
 from .ip import get_client_ip
 from .models import AbstractTenantAPIKey
 from .ratelimit import check_rate_limit
@@ -35,7 +37,7 @@ class HasAPIKeyScope(BasePermission):
     just returns False if ``request.auth`` isn't an API key instance.
     """
 
-    message = "This API key does not have the required scope(s) for this action."
+    message = MISSING_SCOPE_MESSAGE
 
     def has_permission(self, request: Request, view: APIView) -> bool:
         api_key = request.auth
@@ -47,7 +49,11 @@ class HasAPIKeyScope(BasePermission):
 
 
 class HasAllowedIP(BasePermission):
-    """Denies access unless the request's client IP is covered by the
+    """**Deprecated since 0.5:** ``TenantAPIKeyAuthentication`` now enforces
+    ``allowed_ips`` itself, so this only repeats a check that has already
+    passed. It's kept so existing ``permission_classes`` keep working; drop it.
+
+    Denies access unless the request's client IP is covered by the
     authenticated key's ``allowed_ips`` -- an empty ``allowed_ips`` means
     any IP is fine, so this is a no-op for keys that don't restrict IPs::
 
@@ -71,7 +77,13 @@ class HasAllowedIP(BasePermission):
 
 
 class WithinRateLimit(BasePermission):
-    """Enforces the authenticated key's ``rate_limit``, if any::
+    """**Deprecated since 0.5:** use
+    :class:`django_tenant_apikeys.throttling.TenantAPIKeyThrottle`, a real DRF
+    throttle that can be applied to every view through
+    ``DEFAULT_THROTTLE_CLASSES``. Don't combine the two or requests are
+    counted twice.
+
+    Enforces the authenticated key's ``rate_limit``, if any::
 
         class OrdersView(APIView):
             authentication_classes = [TenantAPIKeyAuthentication]

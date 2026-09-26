@@ -9,7 +9,7 @@ Extras are additive — install whichever your project actually uses:
 
 | Extra   | Installs                     | Needed for                                     |
 |---------|-------------------------------|-------------------------------------------------|
-| `drf`   | `djangorestframework>=3.14`   | `TenantAPIKeyAuthentication`, `HasAPIKeyScope`, `HasAllowedIP`, `WithinRateLimit` |
+| `drf`   | `djangorestframework>=3.14`   | `TenantAPIKeyAuthentication`, `HasAPIKeyScope`, `TenantAPIKeyThrottle` (plus the deprecated `HasAllowedIP`, `WithinRateLimit`) |
 | `ninja` | `django-ninja>=1.0`            | `TenantAPIKeyAuth`                              |
 
 Installing the bare package (no extras) still gives you

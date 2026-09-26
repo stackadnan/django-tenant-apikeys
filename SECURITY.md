@@ -19,9 +19,9 @@ confirmed, a fix will be prepared and released before any public disclosure.
 ## Scope
 
 In scope: key generation, hashing, verification, scope checks, IP/CIDR
-allowlisting, rate limiting, and the `authentication.py` / `permissions.py`
-/ `ninja.py` / `admin.py` / `ip.py` / `ratelimit.py` integrations in this
-repository.
+allowlisting, rate limiting, and the `core.py` / `authentication.py` /
+`permissions.py` / `throttling.py` / `ninja.py` / `admin.py` / `ip.py` /
+`ratelimit.py` / `signals.py` integrations in this repository.
 
 Out of scope:
 

@@ -10,32 +10,35 @@ pip install django-tenant-apikeys[ninja]
 # myapp/api.py
 from ninja import NinjaAPI
 
-from django_tenant_apikeys.ninja import TenantAPIKeyAuth
+from django_tenant_apikeys.ninja import TenantAPIKeyAuth, TenantAPIKeyThrottle
 
-api = NinjaAPI(auth=TenantAPIKeyAuth())
+api = NinjaAPI(auth=TenantAPIKeyAuth(), throttle=[TenantAPIKeyThrottle()])
 
 
-@api.post("/deployments")
+@api.post("/deployments", auth=TenantAPIKeyAuth(scopes=["deployments:write"]))
 def create_deployment(request):
-    if not request.auth.has_scope("deployments:write"):
-        return 403, {"detail": "missing required scope"}
     request.tenant.deployments.create(...)
     return {"status": "ok"}
 ```
 
-`TenantAPIKeyAuth` is a Ninja `APIKeyHeader` implementation. It mirrors
-`TenantAPIKeyAuthentication`'s rejection rules exactly — an unknown,
-tampered, inactive, or expired key never falls through as anonymous access
-— and the same success behavior: `record_usage()` runs on every success,
-and `request.tenant` is attached the same way (if the resolved model has a
-`tenant` attribute).
+`TenantAPIKeyAuth` is a Ninja `APIKeyHeader` implementation and a thin
+adapter over the same `authenticate_key()` function the DRF backend uses, so
+both frameworks enforce identical rules: an unknown, tampered, inactive, or
+expired key never falls through as anonymous access, `allowed_ips` and
+`TENANT_API_KEY_ALLOWED_ENVIRONMENTS` are enforced during authentication,
+`record_usage()` runs on every success, and `request.tenant` is attached
+(if the resolved model has a `tenant` attribute).
 
-The one real difference is in how failure surfaces. Ninja doesn't give
-`authenticate()` DRF's `AuthenticationFailed`-with-a-specific-message
-mechanism — every rejection reason here just returns `None`, and Ninja
-turns that into a generic 401 on its own. See
+How failure surfaces:
+
+- A key that fails to authenticate → `authenticate()` returns `None` and
+  Ninja answers a generic 401.
+- A valid key refused by a policy (environment, IP, tenant) or missing a
+  required scope → `HttpError(403)` with a message.
+
+That's the same 401/403 split the DRF backend makes. See
 [Authentication](authentication.md#what-tenantapikeyauthenticationtenantapikeyauth-actually-check)
-for the exact check order both integrations share.
+for the exact check order.
 
 Multiple key models in one project? Subclass and set `model`, same as the
 DRF class:
@@ -49,50 +52,30 @@ class PartnerAPIKeyAuth(TenantAPIKeyAuth):
 auto-generated `/api/docs` show the `Authorization` header as an API-key
 field in its interactive schema — it doesn't change runtime behavior.
 
-## Scopes, IP restrictions, and rate limiting: all inline
+## Scopes
 
-Ninja has no `permission_classes`-style system to hook policy checks into.
-Every check beyond "is this a valid key" — [scopes](scopes.md),
-[IP restrictions](ip-restrictions.md), [rate limiting](rate-limiting.md) —
-is an ordinary `if` statement in your view, using the same shared functions
-DRF's permission classes call internally:
+Pass them to the auth instance; the key must have **all** of them:
 
 ```python
-from django.http import JsonResponse
-
-from django_tenant_apikeys.ip import get_client_ip
-from django_tenant_apikeys.ratelimit import check_rate_limit
-
-
-@api.get("/orders")
+@api.get("/orders", auth=TenantAPIKeyAuth(scopes=["orders:read"]))
 def list_orders(request):
-    if not request.auth.is_ip_allowed(get_client_ip(request)):
-        return JsonResponse({"detail": "IP not allowed"}, status=403)
-
-    result = check_rate_limit(request.auth)
-    if not result.allowed:
-        return JsonResponse(
-            {"detail": "rate limit exceeded", "retry_after": result.retry_after},
-            status=429,
-        )
-
-    if not request.auth.has_scope("orders:read"):
-        return JsonResponse({"detail": "missing required scope"}, status=403)
-
     return request.tenant.orders.all()
 ```
 
-Returning a real `JsonResponse` (rather than Ninja's `(status, dict)` tuple
-shorthand) avoids needing to declare every possible status code up front
-via `@api.get(..., response={200: ..., 403: ..., 429: ...})` — Ninja passes
-an `HttpResponseBase` straight through unmodified, so this works regardless
-of how the operation's `response` schema is configured.
+For a check that depends on the request, call `request.auth.has_scope(...)`
+yourself. See [Scopes](scopes.md).
 
-If several endpoints repeat the same checks, wrapping this pattern in your
-own decorator is reasonable. There isn't one built into the package, since
-it would be Ninja-specific and the core (`is_ip_allowed()`,
-`check_rate_limit()`, `has_scope()`) stays framework-agnostic on purpose —
-the same reasoning `TenantAPIKeyAuth` itself follows.
+## Rate limiting
+
+`TenantAPIKeyThrottle` is a Ninja throttle (needs `django-ninja >= 1.2`).
+Put it on the `NinjaAPI` or a router and it covers every operation beneath
+it; Ninja answers 429 with `Retry-After`. See
+[Rate limiting](rate-limiting.md).
+
+## IP restrictions
+
+Nothing to add: `allowed_ips` is enforced during authentication. See
+[IP restrictions](ip-restrictions.md).
 
 ## Why `get_api_key_model()` instead of importing your model directly
 
@@ -104,8 +87,8 @@ move it to a different app.
 
 ## Next
 
-- [Django REST Framework](django-rest-framework.md) — the same core, with a
-  permission-class chain instead of inline checks.
+- [Django REST Framework](django-rest-framework.md) — the same core,
+  through DRF's authentication, permission and throttle classes.
 - [Scopes](scopes.md), [IP restrictions](ip-restrictions.md),
   [Rate limiting](rate-limiting.md) — the individual policies referenced
   above, in depth.

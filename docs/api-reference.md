@@ -15,7 +15,8 @@ Abstract model. Subclass it and add a `tenant` relation (see
 
 **Fields:** `name`, `prefix`, `hashed_key`, `scopes`, `environment`,
 `rate_limit`, `rate_limit_window`, `allowed_ips`, `metadata`, `is_active`,
-`created_at`, `expires_at`, `last_used_at`, `revoked_at`, `revoked_reason`.
+`created_at`, `expires_at`, `last_used_at`, `last_used_ip`, `rotated_from`,
+`revoked_at`, `revoked_reason`.
 
 **Class methods**
 
@@ -35,13 +36,21 @@ Abstract model. Subclass it and add a `tenant` relation (see
 - `has_scope(self, required_scope: str) -> bool` — see [Scopes](scopes.md).
 - `is_ip_allowed(self, client_ip: str) -> bool` — see
   [IP restrictions](ip-restrictions.md).
-- `record_usage(self) -> None` — updates `last_used_at`, throttled by
-  `LAST_USED_THRESHOLD`. Called automatically by both framework
-  integrations on every successful authentication.
-- `revoke(self, *, reason: str = "") -> None`
+- `record_usage(self, ip: str | None = None) -> None` — updates
+  `last_used_at` (and `last_used_ip` if `ip` is a valid address), throttled
+  by `LAST_USED_THRESHOLD`. Called by authentication on every success.
+- `is_tenant_allowed(self) -> bool` — hook, default `True`; override to
+  refuse keys of a suspended tenant. See
+  [Multi-tenancy](multi-tenancy.md#tenant-state).
+- `clean(self) -> None` — validates `scopes`, `allowed_ips`, `rate_limit`
+  (used by the admin, model forms, `full_clean()`).
+- `revoke(self, *, reason: str = "") -> None` — idempotent.
 - `reactivate(self) -> None`
-- `rotate(self, *, prefix="tak", **overrides) -> tuple[instance, raw_key]`
-  — raises `ValueError` if the key is already inactive or expired.
+- `rotate(self, *, prefix=None, grace_period=None, **overrides) -> tuple[instance, raw_key]`
+  — `prefix` defaults to the key's own; `grace_period` (a positive
+  `timedelta`) keeps the old key valid that long instead of revoking it.
+  Raises `ValueError` if the key is inactive or expired, already has a live
+  replacement, or `grace_period` isn't positive.
 
 **Properties**
 
@@ -93,6 +102,26 @@ No optional dependency required.
 - `get_client_ip(request) -> str` — see
   [IP restrictions](ip-restrictions.md#resolving-the-clients-ip-from-a-request).
 
+## `django_tenant_apikeys.core`
+
+No optional dependency required. The one place a key is authenticated; both
+framework backends are thin adapters over it.
+
+- `authenticate_key(raw_key, *, model=None, client_ip="") -> AbstractTenantAPIKey`
+  — runs the sequence in [Authentication](authentication.md#what-tenantapikeyauthenticationtenantapikeyauth-actually-check);
+  raises `APIKeyRejected` on any failure.
+- `APIKeyRejected` — `.reason` (a `RejectionReason`), `.api_key` (the matched
+  key or `None`), `.is_policy_violation` (`True` for a valid key refused by
+  environment / IP / tenant: a 403, not a 401).
+- `RejectionReason` — `MALFORMED`, `UNKNOWN_KEY`, `BAD_SECRET`, `INACTIVE`,
+  `EXPIRED`, `ENVIRONMENT`, `IP_NOT_ALLOWED`, `TENANT_NOT_ALLOWED`.
+- `split_raw_key(raw_key) -> tuple[str, str] | None` — the shape check.
+
+## `django_tenant_apikeys.signals`
+
+`api_key_created`, `api_key_revoked`, `api_key_rotated`, `api_key_rejected`.
+See [Signals and logging](signals.md).
+
 ## `django_tenant_apikeys.ratelimit`
 
 No optional dependency required.
@@ -135,23 +164,35 @@ method, meant to compose in `permission_classes` — see
 
 - `HasAPIKeyScope` — enforces the view's `required_scopes` against
   `request.auth.has_scope(...)`. See [Scopes](scopes.md).
-- `HasAllowedIP` — enforces `request.auth.allowed_ips`. See
+- `HasAllowedIP` — **deprecated**: `allowed_ips` is enforced during
+  authentication now, so this only repeats that check. See
   [IP restrictions](ip-restrictions.md).
-- `WithinRateLimit` — enforces `request.auth.rate_limit`; raises DRF's
-  `Throttled` (429) once exceeded, and sets `X-RateLimit-*` response
-  headers. See [Rate limiting](rate-limiting.md).
+- `WithinRateLimit` — **deprecated** in favour of `TenantAPIKeyThrottle`
+  (below); raises DRF's `Throttled` (429) once exceeded. See
+  [Rate limiting](rate-limiting.md).
 
 All three return `False` if `request.auth` isn't an `AbstractTenantAPIKey`
 instance, so each is meant to be paired with `TenantAPIKeyAuthentication`,
 not used alone.
 
+## `django_tenant_apikeys.throttling` (needs `[drf]`)
+
+- `TenantAPIKeyThrottle` — DRF `BaseThrottle` enforcing the authenticated
+  key's `rate_limit` (429 + `Retry-After`, `X-RateLimit-*` headers). See
+  [Rate limiting](rate-limiting.md).
+
 ## `django_tenant_apikeys.ninja` (needs `[ninja]`)
 
-- `TenantAPIKeyAuth` — Ninja `APIKeyHeader` subclass.
+- `TenantAPIKeyAuth(scopes=None)` — Ninja `APIKeyHeader` subclass; `scopes`
+  are required on every operation using the instance.
     - `param_name = "Authorization"`, `openapi_scheme = "apikey"`,
       `model: type[AbstractTenantAPIKey] | None = None`
     - `get_model(self) -> type[AbstractTenantAPIKey]`
     - `authenticate(self, request, key: str | None) -> AbstractTenantAPIKey | None`
+      — `None` (401) if authentication fails; raises `HttpError(403)` for a
+      policy refusal or missing scope.
+- `TenantAPIKeyThrottle` — Ninja throttle enforcing `rate_limit`
+  (needs `django-ninja >= 1.2`).
 
 See [Django Ninja](django-ninja.md).
 
@@ -167,7 +208,7 @@ See [Django Ninja](django-ninja.md).
 Require `django_tenant_apikeys` in `INSTALLED_APPS`.
 
 - `tenant_api_key_revoke <prefix> [--reason TEXT]`
-- `tenant_api_key_rotate <prefix>`
+- `tenant_api_key_rotate <prefix> [--grace-days N]`
 
 See [Management commands](management-commands.md).
 
@@ -175,5 +216,6 @@ See [Management commands](management-commands.md).
 
 See [Configuration](configuration.md) for the complete list:
 `TENANT_API_KEY_MODEL`, `TENANT_API_KEY_TRUSTED_PROXY_HEADER`,
-`TENANT_API_KEY_TRUSTED_PROXY_COUNT`,
-`TENANT_API_KEY_RATE_LIMIT_CACHE`, `TENANT_API_KEY_RATE_LIMIT_BACKEND`.
+`TENANT_API_KEY_TRUSTED_PROXY_COUNT`, `TENANT_API_KEY_ALLOWED_ENVIRONMENTS`,
+`TENANT_API_KEY_RECORD_IP`, `TENANT_API_KEY_RATE_LIMIT_CACHE`,
+`TENANT_API_KEY_RATE_LIMIT_BACKEND`.

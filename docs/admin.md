@@ -71,7 +71,7 @@ plus a fixed run of bullet characters, which is enough to recognize *which*
 key a row is without exposing anything secret.
 
 `readonly_fields` covers `prefix`, `created_at`, `last_used_at`,
-`revoked_at`, and `revoked_reason` — on the individual change form, these
+`last_used_ip`, `rotated_from`, `revoked_at`, and `revoked_reason` — on the individual change form, these
 render as plain text, not inputs. `hashed_key` is `editable=False` and
 deliberately not shown at all. There's no form field an admin user could
 tamper with to make the row accept an attacker-chosen hash, or backdate

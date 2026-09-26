@@ -40,25 +40,19 @@ if your concrete model has an attribute named exactly `tenant`
 
 ## Scopes/IP restriction/rate limit aren't being enforced
 
-For DRF, each policy is its own permission class, and none of them run
-unless it's actually in `permission_classes`:
-
-```python
-permission_classes = [HasAllowedIP, WithinRateLimit, HasAPIKeyScope]
-```
-
-Forgetting one of them for a given view means that check simply doesn't
-run for that view — there's no global switch that turns policies on for
-every endpoint at once. See
-[How the policies interact](django-rest-framework.md#how-the-policies-interact).
-
-For Django Ninja, there's no permission-class system at all — every check
-is an explicit `if` statement you write in the view body. If you didn't
-write the check, it doesn't happen. See [Django Ninja](django-ninja.md).
-
-Also worth checking: is the field actually set on the key? A key with
-`allowed_ips=[]` or `rate_limit=None` is unrestricted by design — that's
-the backward-compatible default, not a bug.
+- **`allowed_ips` and environments** are enforced during authentication in
+  both frameworks — nothing to forget. If they seem not to apply, check the
+  key's field really is set (a key with `allowed_ips=[]` is unrestricted by
+  design), that `TENANT_API_KEY_ALLOWED_ENVIRONMENTS` is set for the
+  environment check, and, behind a proxy, the
+  [trusted-proxy settings](ip-restrictions.md#trusting-a-proxy-header).
+- **Scopes** are per view: `HasAPIKeyScope` with `required_scopes` (DRF), or
+  `TenantAPIKeyAuth(scopes=[...])` (Ninja). A view with neither lets any
+  authenticated key through.
+- **Rate limits** need the throttle applied: `TenantAPIKeyThrottle` in
+  `DEFAULT_THROTTLE_CLASSES` / `throttle_classes` (DRF), or on the
+  `NinjaAPI`/router `throttle=` (Ninja). A key with `rate_limit=None` is
+  never limited. See [Rate limiting](rate-limiting.md).
 
 ## Rate limiting seems to reset unexpectedly, or allows more than the configured limit
 

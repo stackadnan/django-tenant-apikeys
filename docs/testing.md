@@ -64,15 +64,16 @@ something upstream of it.
 
 ### Testing a full permission chain without URL routing
 
-For a policy chain (IP restriction, rate limit, scope — see
-[How the policies interact](django-rest-framework.md#how-the-policies-interact)),
+For a policy chain (authentication-time policies, scope, throttle — see
+[How a request is handled](django-rest-framework.md#how-a-request-is-handled)),
 `APIView.as_view()` can be called directly on a built request, without
 registering a URL at all:
 
 ```python
 class OrdersView(APIView):
     authentication_classes = [TenantAPIKeyAuthentication]
-    permission_classes = [HasAllowedIP, WithinRateLimit, HasAPIKeyScope]
+    permission_classes = [HasAPIKeyScope]
+    throttle_classes = [TenantAPIKeyThrottle]
     required_scopes = ["orders:read"]
 
     def get(self, request):
@@ -84,13 +85,13 @@ def call(raw_key, remote_addr="203.0.113.10"):
     return OrdersView.as_view()(request)
 ```
 
-This exercises DRF's actual `authenticate()` → `check_permissions()` flow —
-the real dispatch order — while still avoiding `urls.py` and a test client.
+This exercises DRF's actual `authenticate()` → `check_permissions()` →
+`check_throttles()` flow — the real dispatch order — while still avoiding `urls.py` and a test client.
 
 ### Testing a Django Ninja view the same way
 
 `ninja.testing.TestClient` runs a real `NinjaAPI` operation, including
-authentication and whatever inline checks the view performs, without a
+authentication, `scopes=`, and any throttle configured on the API, without a
 running server:
 
 ```python

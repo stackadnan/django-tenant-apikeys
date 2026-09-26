@@ -90,47 +90,50 @@ Rotating an already-inactive or expired key raises `ValueError` — silently
 handing out working access from a key that was deliberately (or
 automatically) shut off would be the wrong default.
 
-### Rotating without breaking clients: the overlap pattern
+### Rotating with a grace period
 
-`rotate()` revokes the old key immediately, which is right for a
-compromised key but wrong if you want the client to switch over on their
-own schedule. There's no built-in "rotate with a grace period" — that's a
-pattern built from the primitives above, not a single method call:
-
-**1. Issue the replacement, hand the raw key to the client now:**
+`rotate()` revokes the old key immediately, which is right for a compromised
+key but wrong if the client needs time to switch over. Pass a grace period:
 
 ```python
-new_instance, new_raw_key = OrganizationAPIKey.generate_key(
-    name=f"{old_instance.name} (rotated)",
-    tenant=old_instance.tenant,
-    scopes=old_instance.scopes,
-)
+from datetime import timedelta
+
+new_key, raw_key = api_key.rotate(grace_period=timedelta(days=7))
 ```
 
-**2. Give the old key a grace-period expiry instead of deactivating it:**
+The old key is **not** revoked. Its `expires_at` is set to `now +
+grace_period` — or left alone if it already expires sooner; a grace period
+never extends a key's life — so both keys authenticate until then and the
+old one stops by itself. The new key gets the old key's *original*
+`expires_at`, not the grace cutoff. `grace_period` must be positive.
+
+While the old key has a live replacement it can't be rotated again (that
+would leave two live replacements): the second call raises `ValueError`.
+Once the replacement is revoked or expired, rotating is allowed again.
+
+Use `last_used_at` to see whether the client has moved: once the old key's
+`last_used_at` stops advancing, you can `revoke()` it early instead of
+waiting out the window.
+
+From the command line: `manage.py tenant_api_key_rotate <prefix> --grace-days 7`.
+
+For a **compromised** key, skip the grace period entirely — plain
+`rotate()`, or `revoke()`.
+
+### Which key replaced which
+
+The new key's `rotated_from` points at the key it replaced (set to `NULL`,
+not cascaded, if the old row is ever deleted); the reverse accessor is
+`old_key.rotated_to`. The Django admin shows it.
 
 ```python
-old_instance.expires_at = timezone.now() + timedelta(days=30)
-old_instance.save(update_fields=["expires_at"])
+new_key.rotated_from      # the old key
+old_key.rotated_to.all()  # every key issued to replace it
 ```
 
-The old key keeps working (`is_valid` stays `True`) until that date — the
-client has 30 days (pick whatever fits) to switch over.
-
-**3. Use `last_used_at` to confirm it's actually safe to cut off early:**
-
-```python
-if old_instance.last_used_at is None or old_instance.last_used_at < some_cutoff:
-    old_instance.is_active = False
-    old_instance.save(update_fields=["is_active"])
-```
-
-Once `last_used_at` stops advancing, the client has migrated — you don't
-have to wait out the full grace period, and you don't have to guess.
-
-For a **compromised** key, skip the grace period entirely — `revoke()` (or
-`api_key.is_active = False`) right away, and issue the replacement the same
-way as step 1.
+`reactivate()` on a rotated key is still allowed on purpose: undoing a
+rotation that didn't deploy is a legitimate rollback (revoke the
+replacement, reactivate the original). It doesn't touch `rotated_from`.
 
 ## `last_used_at` without a write on every request
 
@@ -160,6 +163,11 @@ The trade-off: `last_used_at` answers "was this key used recently," not
 cutover is safe — that's the right trade-off. If you need an exact
 per-request audit trail, that's a different problem (a separate log table),
 not what this field is for.
+
+With `TENANT_API_KEY_RECORD_IP = True`, the same write also stores the
+client address in `last_used_ip` (only if it's a valid IP; garbage is never
+stored). A *changed* address is written immediately instead of waiting out
+the threshold, so `last_used_ip` never lags a move to a new address.
 
 Override the threshold per subclass for coarser or finer tracking:
 

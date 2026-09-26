@@ -37,9 +37,15 @@ happy one.
 - **Scopes, not just on/off.** `"orders:read"`, a whole namespace with
   `"orders:*"`, or everything with `"*"`.
 - **Per-key IP allowlists and rate limits.** IPv4/IPv6, CIDR networks, and
-  a configurable per-key request limit — both optional, both opt-in.
-- **A real lifecycle.** `rotate()` issues a replacement and revokes the
-  original in one call; `revoke()`/`reactivate()` manage access directly.
+  a configurable per-key request limit — optional per key. The allowlist
+  (and, if you set it, the environment) is enforced during authentication,
+  identically in DRF and Ninja, so a view can't forget it; the rate limit
+  is a native DRF/Ninja throttle.
+- **A real lifecycle.** `rotate()` issues a replacement — revoking the
+  original at once, or letting it run out over a grace period, with
+  `rotated_from` recording which key replaced which; `revoke()` /
+  `reactivate()` manage access directly; signals and a logger tell you
+  what happened.
 - **Small, framework-agnostic core.** The model doesn't know DRF or Ninja
   exist. Everything framework-specific is an optional adapter on top.
 

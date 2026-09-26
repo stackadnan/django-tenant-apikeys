@@ -77,6 +77,25 @@ concurrent (or stale-instance) rotations can't both succeed. (Row locks are
 a no-op on SQLite; there, only the re-read applies.) Full detail:
 [Key lifecycle](key-lifecycle.md).
 
+## Policies are enforced during authentication
+
+The checks that decide whether a *valid* key may be used at all — active,
+expiry, allowed environment, `allowed_ips`, and the tenant hook — run inside
+`authenticate_key()`, before any view or permission class, and identically
+for DRF and Ninja (a parity test suite runs the same requests through both).
+So there is no way to write an endpoint that accepts a valid key yet skips
+its IP allowlist, which was possible before 0.5 when that check lived in an
+opt-in permission class. Scopes (a property of the view) and rate limits (a
+DRF/Ninja throttle) are the two things you still have to apply.
+
+Input is shape-checked before it reaches the database: printable, no
+whitespace or control characters, at most 128 characters, `prefix.secret`
+with a prefix that fits the column.
+
+Every rejection is logged and sent on a signal with its precise reason (see
+[Signals and logging](signals.md)); the secret, and any prefix that didn't
+match a real key, are never logged.
+
 ## IP restrictions: don't trust a spoofable header by default
 
 `get_client_ip()` reads `REMOTE_ADDR` — the actual TCP connection's source

@@ -95,3 +95,29 @@ class TestTenantApiKeyRotate:
 
         with pytest.raises(CommandError, match="inactive or expired"):
             call_command("tenant_api_key_rotate", instance.prefix)
+
+    def test_grace_days_keeps_the_old_key_valid_until_then(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(name="k", tenant=tenant)
+        out = StringIO()
+
+        call_command("tenant_api_key_rotate", instance.prefix, "--grace-days", "7", stdout=out)
+
+        instance.refresh_from_db()
+        assert instance.is_active is True
+        assert instance.is_valid is True
+        assert instance.expires_at is not None
+        assert "stays valid until" in out.getvalue()
+        assert TenantAPIKey.objects.filter(rotated_from=instance).count() == 1
+
+    def test_zero_grace_days_is_a_command_error(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(name="k", tenant=tenant)
+
+        with pytest.raises(CommandError, match="grace_period"):
+            call_command("tenant_api_key_rotate", instance.prefix, "--grace-days", "0")
+
+    def test_custom_prefix_survives_the_command(self, tenant: Tenant) -> None:
+        instance, _raw_key = TenantAPIKey.generate_key(name="k", tenant=tenant, prefix="acme")
+
+        call_command("tenant_api_key_rotate", instance.prefix)
+
+        assert TenantAPIKey.objects.filter(is_active=True, prefix__startswith="acme_live_").exists()

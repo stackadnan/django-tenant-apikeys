@@ -27,10 +27,15 @@ matches the prefix.
 
 ```bash
 python manage.py tenant_api_key_rotate tak_live_3f9a2c1d
+python manage.py tenant_api_key_rotate tak_live_3f9a2c1d --grace-days 7
 ```
 
 Same prefix lookup, then calls
-[`rotate()`](key-lifecycle.md#rotating-a-key-without-downtime) — prints the
+[`rotate()`](key-lifecycle.md#rotating-a-key-without-downtime). With
+`--grace-days N` the old key isn't revoked; it stays valid for N more days
+([rotating with a grace period](key-lifecycle.md#rotating-with-a-grace-period))
+and the command prints when it stops. Without it the old key is revoked
+immediately. Either way it prints the
 new key's prefix and its raw secret once, the same way the admin and
 `generate_key()` do. Raises `CommandError` (not a traceback) if the key is
 already inactive or expired, since `rotate()` itself refuses that case.

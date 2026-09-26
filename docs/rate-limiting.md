@@ -39,39 +39,40 @@ field `None`.
 
 ## What happens when the limit is exceeded
 
+Rate limiting is a normal throttle in each framework, so the framework
+answers **429 with `Retry-After`**. A key with no `rate_limit`, and a request
+not authenticated by an API key, are never throttled.
+
 ### Django REST Framework
 
 ```python
-from django_tenant_apikeys.permissions import HasAPIKeyScope, WithinRateLimit
-
-class OrdersView(APIView):
-    authentication_classes = [TenantAPIKeyAuthentication]
-    permission_classes = [WithinRateLimit, HasAPIKeyScope]
-    required_scopes = ["orders:read"]
+# settings.py -- every view
+REST_FRAMEWORK = {
+    "DEFAULT_THROTTLE_CLASSES": [
+        "django_tenant_apikeys.throttling.TenantAPIKeyThrottle",
+    ],
+}
 ```
 
-Once the limit is hit, `WithinRateLimit` raises DRF's own `Throttled` — a
-429 response with a `Retry-After` header — instead of returning `False`
-(which would produce DRF's default 403). It also sets
+or `throttle_classes = [TenantAPIKeyThrottle]` on a view. It also sets
 `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset` on the
-response, whether the request was allowed or not, via `view.headers` — the
-same mechanism DRF itself uses for headers like `Allow`.
+response, allowed or not, via `view.headers`.
+
+`WithinRateLimit` (a permission class raising `Throttled`) still works but is
+deprecated; don't use both or requests are counted twice.
 
 ### Django Ninja
 
 ```python
-from django_tenant_apikeys.ratelimit import check_rate_limit
+from django_tenant_apikeys.ninja import TenantAPIKeyAuth, TenantAPIKeyThrottle
 
-@api.get("/orders")
-def list_orders(request):
-    result = check_rate_limit(request.auth)
-    if not result.allowed:
-        return 429, {"detail": "rate limit exceeded", "retry_after": result.retry_after}
-    ...
+api = NinjaAPI(auth=TenantAPIKeyAuth(), throttle=[TenantAPIKeyThrottle()])
 ```
 
-See [Django Ninja](django-ninja.md) for the full view, composed with IP and
-scope checks.
+Needs `django-ninja >= 1.2` (Ninja's throttling arrived then). Set on the
+`NinjaAPI` or a router it covers every operation beneath it.
+
+Both throttles call `check_rate_limit()`, which you can also use directly.
 
 ## How the default backend counts requests
 

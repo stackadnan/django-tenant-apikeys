@@ -49,6 +49,8 @@ class TenantAPIKeyAdmin(_TenantAPIKeyAdminBase):
         "prefix",
         "created_at",
         "last_used_at",
+        "last_used_ip",
+        "rotated_from",
         "revoked_at",
         "revoked_reason",
     )

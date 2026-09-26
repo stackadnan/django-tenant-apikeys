@@ -22,6 +22,7 @@ from django.core.cache import caches as _caches
 from django.core.cache.backends.db import DatabaseCache
 from django.core.cache.backends.dummy import DummyCache
 from django.core.cache.backends.filebased import FileBasedCache
+from django.core.exceptions import ImproperlyConfigured
 from django.utils.module_loading import import_string
 
 if TYPE_CHECKING:
@@ -94,8 +95,8 @@ class CacheRateLimitBackend:
                         be exceeded. Warns at construction.
     FileBasedCache      Same as DatabaseCache, and ``add()`` isn't
                         atomic either. Warns at construction.
-    DummyCache          Stores nothing, so the limit is never enforced.
-                        Warns at construction.
+    DummyCache          Stores nothing, so the limit could never be
+                        enforced. Raises ImproperlyConfigured.
     ==================  ==============================================
 
     Point ``TENANT_API_KEY_RATE_LIMIT_CACHE`` (or ``CACHES["default"]``) at
@@ -115,12 +116,13 @@ class CacheRateLimitBackend:
             cache = _caches[cache_alias]
         self.cache = cache
         if isinstance(cache, DummyCache):
-            warnings.warn(
-                "The rate-limit cache is a DummyCache, which stores nothing: "
-                "every key's rate_limit is silently unenforced. Point "
-                "TENANT_API_KEY_RATE_LIMIT_CACHE at a real cache.",
-                RuntimeWarning,
-                stacklevel=2,
+            # A key's rate_limit is a security control. On a cache that stores
+            # nothing it would silently never apply, so refuse loudly instead.
+            raise ImproperlyConfigured(
+                "The rate-limit cache is a DummyCache, which stores nothing: every "
+                "key's rate_limit would be silently unenforced. Point "
+                "TENANT_API_KEY_RATE_LIMIT_CACHE at a real cache alias (LocMemCache is "
+                "fine for development)."
             )
         elif isinstance(cache, (DatabaseCache, FileBasedCache)):
             warnings.warn(

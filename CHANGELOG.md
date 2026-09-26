@@ -11,6 +11,89 @@ versions if a `0.x` release note says so.
 
 No unreleased changes yet.
 
+## [0.5.0] - 2026-09-26
+
+Django REST Framework and Django Ninja now share one authentication path,
+and a key's IP allowlist and allowed environment are enforced during
+authentication, so no endpoint can accept a key and skip them. Also new:
+rotation with a grace period, lifecycle signals, and native rate-limit
+throttles for both frameworks.
+
+**Please read "Breaking changes" and "Migration" before upgrading.**
+
+### Added
+
+- **Policies are enforced during authentication.** A key's `allowed_ips` are
+  checked on every request, in both frameworks, and a valid key refused by a
+  policy gets a 403 (a key that fails to authenticate is still a 401).
+  Previously `allowed_ips` applied only on views where you had added
+  `HasAllowedIP` (DRF) or an inline check (Ninja).
+- `TENANT_API_KEY_ALLOWED_ENVIRONMENTS` setting: if set, keys from any other
+  environment are refused (403). Unset by default.
+- `AbstractTenantAPIKey.is_tenant_allowed()`: override it to refuse the keys
+  of a suspended tenant.
+- Rate limiting as a native throttle:
+  `django_tenant_apikeys.throttling.TenantAPIKeyThrottle` for DRF and
+  `django_tenant_apikeys.ninja.TenantAPIKeyThrottle` for Django Ninja (needs
+  django-ninja 1.2 or later). Add it to `DEFAULT_THROTTLE_CLASSES`, or to
+  `NinjaAPI(throttle=[...])`, to apply it to every endpoint.
+- `TenantAPIKeyAuth(scopes=[...])` for Django Ninja: require scopes per
+  operation (403 if any is missing).
+- `rotate(grace_period=timedelta(...))`: keep the old key valid for a period
+  instead of revoking it immediately. The old key's `expires_at` is set to the
+  end of the grace period (a key that expires sooner is left alone), so both
+  keys work until then. Also available as
+  `manage.py tenant_api_key_rotate <prefix> --grace-days N`. A key that
+  already has a live replacement can't be rotated again.
+- `rotated_from` on API keys records which key a rotated key replaced
+  (reverse accessor: `rotated_to`); it is shown in the admin.
+- `last_used_ip`, recorded together with `last_used_at` when
+  `TENANT_API_KEY_RECORD_IP = True` (off by default).
+- Signals `api_key_created`, `api_key_revoked`, `api_key_rotated` and
+  `api_key_rejected` (in `django_tenant_apikeys.signals`), and a
+  `django_tenant_apikeys` logger that records every rejected key. Secrets are
+  never logged. A failing signal receiver never breaks the operation.
+- `django_tenant_apikeys.core.authenticate_key()`, the function both
+  frameworks now use to authenticate a key, for use in your own code.
+
+### Changed
+
+- Authentication now rejects malformed keys without querying the database and
+  loads the key's tenant in the same query.
+- A `DummyCache` as the rate-limit cache now raises `ImproperlyConfigured`
+  (0.4.1 warned): a `rate_limit` on a cache that stores nothing would never
+  apply.
+- `HasAllowedIP` and `WithinRateLimit` are deprecated but still work.
+  `HasAllowedIP` now only repeats a check that authentication has already
+  made. Use `TenantAPIKeyThrottle` instead of `WithinRateLimit`; don't use both
+  or requests are counted twice.
+
+### Breaking changes
+
+- **`allowed_ips` is now enforced on every request.** Keys that have
+  `allowed_ips` set but were used from other addresses (because a view didn't
+  check) will now receive 403s. Behind a reverse proxy, set
+  `TENANT_API_KEY_TRUSTED_PROXY_HEADER` (and
+  `TENANT_API_KEY_TRUSTED_PROXY_COUNT` if you have more than one proxy) first;
+  otherwise every request appears to come from the proxy. To find the
+  affected keys: `MyKey.objects.exclude(allowed_ips=[])`.
+- `TenantAPIKeyAuthentication().authenticate_credentials(raw_key)` called
+  without a `request` (so without a client IP) now refuses a key that has
+  `allowed_ips`, instead of accepting it.
+- A `DummyCache` rate-limit cache now raises `ImproperlyConfigured`. For
+  development, point `TENANT_API_KEY_RATE_LIMIT_CACHE` at a `LocMemCache`
+  alias.
+
+### Migration
+
+This release adds two nullable fields (`last_used_ip` and `rotated_from`) to
+`AbstractTenantAPIKey`. Generate and apply a migration for your key model:
+
+```bash
+python manage.py makemigrations
+python manage.py migrate
+```
+
 ## [0.4.1] - 2026-09-26
 
 Security and bug-fix release. No new features and no migration required.
@@ -239,7 +322,8 @@ Initial release.
 - Documented recipe for Django Ninja integration (no dedicated module
   shipped — see the README).
 
-[Unreleased]: https://github.com/stackadnan/django-tenant-apikeys/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/stackadnan/django-tenant-apikeys/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/stackadnan/django-tenant-apikeys/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/stackadnan/django-tenant-apikeys/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/stackadnan/django-tenant-apikeys/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/stackadnan/django-tenant-apikeys/compare/v0.2.0...v0.3.0

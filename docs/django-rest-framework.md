@@ -78,76 +78,70 @@ class OrdersView(APIView):
 
 Full detail, including per-action scopes on a `ViewSet`: [Scopes](scopes.md).
 
-## IP restrictions
+## IP restrictions and environments
 
-```python
-from django_tenant_apikeys.permissions import HasAllowedIP
+Enforced during authentication itself — there is nothing to add to
+`permission_classes`. A key with `allowed_ips` set is refused from any other
+address (403), and, if you set `TENANT_API_KEY_ALLOWED_ENVIRONMENTS`, so is
+a key from an environment that isn't listed. A view can't accept such a key
+and forget to check, which is the point. See
+[IP restrictions](ip-restrictions.md) (including trusted-proxy
+configuration) and [Environments](environments.md).
 
-class OrdersView(APIView):
-    authentication_classes = [TenantAPIKeyAuthentication]
-    permission_classes = [HasAllowedIP, HasAPIKeyScope]
-    required_scopes = ["orders:read"]
-```
-
-Full detail, including trusted-proxy-header configuration:
-[IP restrictions](ip-restrictions.md).
+`HasAllowedIP` still exists and still works, but it now only repeats a check
+authentication has already made; it's deprecated and can be dropped from
+`permission_classes`.
 
 ## Rate limiting
 
-```python
-from django_tenant_apikeys.permissions import WithinRateLimit
-
-class OrdersView(APIView):
-    authentication_classes = [TenantAPIKeyAuthentication]
-    permission_classes = [WithinRateLimit, HasAPIKeyScope]
-    required_scopes = ["orders:read"]
-```
-
-Full detail, including how the default backend counts requests and its
-multi-process limitations: [Rate limiting](rate-limiting.md).
-
-## How the policies interact
-
-Combine all three (or any subset) in `permission_classes`, in this order:
+A key's `rate_limit` is enforced by a normal DRF throttle. Set it once for
+every view:
 
 ```python
-permission_classes = [HasAllowedIP, WithinRateLimit, HasAPIKeyScope]
+# settings.py
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "django_tenant_apikeys.authentication.TenantAPIKeyAuthentication",
+    ],
+    "DEFAULT_THROTTLE_CLASSES": [
+        "django_tenant_apikeys.throttling.TenantAPIKeyThrottle",
+    ],
+}
 ```
 
-DRF checks `permission_classes` in list order, and stops at the first one
-that denies the request — so the order you list them in is the order they
-actually run in:
+or per view with `throttle_classes = [TenantAPIKeyThrottle]`. DRF answers
+429 with `Retry-After`; the throttle also sets `X-RateLimit-*` headers. A key
+with no `rate_limit`, and a request not authenticated by an API key, are
+never throttled. `WithinRateLimit` (a permission class doing a throttle's
+job) still works, is deprecated, and shouldn't be combined with the throttle
+or requests are counted twice.
+
+Unlike IP and environment, rate limiting is applied through DRF's own
+throttling settings rather than inside authentication, because it's an
+availability control DRF already has a global switch for. Full detail,
+including cache backends: [Rate limiting](rate-limiting.md).
+
+## How a request is handled
 
 ```
-Authentication (extract, verify, active/expired, resolve tenant)
-      ↓
-IP restriction   (HasAllowedIP)
-      ↓
-Rate limit       (WithinRateLimit)
-      ↓
-Scope            (HasAPIKeyScope)
-      ↓
+Authentication  (shape → lookup → secret → active → expiry
+                 → environment → IP allowlist → tenant hook → usage)
+      ↓  401 if the key fails to authenticate, 403 if a policy refuses it
+Permissions     (HasAPIKeyScope)
+      ↓  403
+Throttles       (TenantAPIKeyThrottle)
+      ↓  429
 Your view
 ```
 
-A request from a disallowed IP never reaches the rate limiter or the scope
-check. A request over its rate limit never reaches the scope check, but
-*does* still count against — and gets rejected by — the rate limiter even
-if it would've failed the scope check anyway, since the rate limiter runs
-first.
-
-`TenantAPIKeyAuthentication` itself hasn't changed shape for any of this —
-it still only extracts the key, verifies it, checks
-`is_active`/`expires_at`, and resolves `request.tenant`. IP, rate limit, and
-scope are separate, independently testable permission classes layered on
-top, not folded into authentication. None of them are required — a
-`permission_classes = [HasAPIKeyScope]` view from before these existed
-still behaves exactly as it did.
+Everything security-relevant except scopes and the throttle happens in
+authentication, before your view or any permission class runs. Scopes stay a
+per-view permission because *what a view needs* is a property of the view.
 
 ## Next
 
-- [Django Ninja](django-ninja.md) — the same policies, without DRF's
-  permission-class system.
+- [Django Ninja](django-ninja.md) — the same enforcement, through Ninja's
+  own auth and throttle hooks.
 - [Multi-tenancy](multi-tenancy.md) — how `request.tenant` gets resolved.
 - [Testing](testing.md) — testing a DRF authentication/permission chain
   without spinning up real URL routing.

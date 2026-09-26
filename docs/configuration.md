@@ -58,6 +58,27 @@ and Django. `get_client_ip()` takes that many entries from the **right** of
 the client and are never used). Ignored unless the header setting is set.
 See [IP restrictions](ip-restrictions.md#trusting-a-proxy-header).
 
+## `TENANT_API_KEY_ALLOWED_ENVIRONMENTS`
+
+```python
+TENANT_API_KEY_ALLOWED_ENVIRONMENTS = ["production"]
+```
+
+**Optional, unset by default.** If set, a key whose `environment` isn't in
+the list is refused during authentication (403). Unset enforces nothing; an
+empty list refuses every key. See [Environments](environments.md).
+
+## `TENANT_API_KEY_RECORD_IP`
+
+```python
+TENANT_API_KEY_RECORD_IP = True
+```
+
+**Optional, default `False`.** Store the client IP of a key's last use in
+`last_used_ip` (an IP address is personal data in some jurisdictions, hence
+opt-in). Written with `last_used_at`, and immediately when the address
+changes. See [Key lifecycle](key-lifecycle.md#last_used_at-without-a-write-on-every-request).
+
 ## `TENANT_API_KEY_RATE_LIMIT_CACHE`
 
 ```python
@@ -85,8 +106,8 @@ need something the default cache-backed counter doesn't give you.
 
 There's no `TENANT_API_KEY_ENABLE_RATE_LIMITING` or similar feature flag —
 [rate limiting](rate-limiting.md), [IP restrictions](ip-restrictions.md),
-[environments](environments.md), and [metadata](metadata.md) are all
-per-key, not global. A key with no `rate_limit` set is never rate-limited; a
-key with no `allowed_ips` accepts any IP. There's nothing to switch on at
-the project level, and nothing that changes behavior for keys that don't
-opt in.
+and [metadata](metadata.md) are per-key. A key with no `rate_limit` set is
+never rate-limited; a key with no `allowed_ips` accepts any IP. The two
+project-level settings above that *do* change behaviour
+(`TENANT_API_KEY_ALLOWED_ENVIRONMENTS`, `TENANT_API_KEY_RECORD_IP`) are both
+off unless you set them.

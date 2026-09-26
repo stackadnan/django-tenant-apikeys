@@ -59,6 +59,25 @@ depend on the tenant relation existing at all.
 field — it exists specifically to prove `request.tenant` is never set when
 there's nothing to attach.
 
+## Tenant state
+
+A suspended or unpaid tenant's keys should stop working. The package doesn't
+know what "suspended" means for your model, so it gives you a hook — override
+`is_tenant_allowed()` on your concrete key model:
+
+```python
+class OrganizationAPIKey(AbstractTenantAPIKey):
+    tenant = models.ForeignKey(Organization, related_name="api_keys", on_delete=models.CASCADE)
+
+    def is_tenant_allowed(self) -> bool:
+        return self.tenant.is_active
+```
+
+It runs during authentication, after the key itself has fully verified, in
+both frameworks; returning `False` is a 403. The tenant is joined into the
+authentication query, so reading `self.tenant` there costs no extra query.
+The default returns `True`.
+
 ## What isolation the package gives you, and what it doesn't
 
 A key belongs to exactly one tenant, resolved from one row, in one query,

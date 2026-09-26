@@ -88,20 +88,20 @@ class OrdersViewSet(viewsets.ModelViewSet):
 
 ### Django Ninja
 
-There's no Ninja equivalent of `HasAPIKeyScope` — Ninja doesn't have a
-permission-class system to hook into. Check `has_scope()` directly in the
-view body:
+Ninja has no permission classes; pass the scopes to the auth instance for
+the operation. The key must have **all** of them, and a key that doesn't gets
+a 403:
 
 ```python
-@api.get("/orders")
+from django_tenant_apikeys.ninja import TenantAPIKeyAuth
+
+@api.get("/orders", auth=TenantAPIKeyAuth(scopes=["orders:read"]))
 def list_orders(request):
-    if not request.auth.has_scope("orders:read"):
-        return 403, {"detail": "missing required scope"}
     return request.tenant.orders.all()
 ```
 
-See [Django Ninja](django-ninja.md) for the full integration, including how
-this composes with IP and rate-limit checks.
+For a check that depends on the request, call `request.auth.has_scope(...)`
+in the view body. See [Django Ninja](django-ninja.md).
 
 ## Designing scopes that age well
 

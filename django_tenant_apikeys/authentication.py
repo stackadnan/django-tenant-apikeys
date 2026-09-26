@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from django.utils import timezone
-
 try:
     from rest_framework import exceptions
     from rest_framework.authentication import BaseAuthentication, get_authorization_header
@@ -15,13 +13,13 @@ except ImportError as exc:  # pragma: no cover - exercised only when DRF is abse
         "`pip install django-tenant-apikeys[drf]`."
     ) from exc
 
+from .core import API_KEY_KEYWORD, APIKeyRejected, authenticate_key, client_message
+from .ip import get_client_ip
 from .models import AbstractTenantAPIKey, get_api_key_model
 
 # get_api_key_model is re-exported here too since non-DRF integrations
 # (Ninja) need it without pulling in this module's DRF dependency.
 __all__ = ["API_KEY_KEYWORD", "TenantAPIKeyAuthentication", "get_api_key_model"]
-
-API_KEY_KEYWORD = "Api-Key"
 
 
 class TenantAPIKeyAuthentication(BaseAuthentication):
@@ -30,6 +28,14 @@ class TenantAPIKeyAuthentication(BaseAuthentication):
     Returns ``(None, api_key_instance)`` on success -- no Django ``User``,
     since a key authenticates an integration rather than a person. If the
     model has a ``tenant`` relation it's attached to ``request.tenant``.
+
+    All verification and policy enforcement (active, expiry, environment,
+    ``allowed_ips``, the tenant hook) lives in
+    :func:`django_tenant_apikeys.core.authenticate_key`; this class only maps
+    its outcome onto DRF: a key that fails to authenticate is a 401
+    (``AuthenticationFailed``), a valid key refused by a policy is a 403
+    (``PermissionDenied``). Because that happens during authentication, no
+    view can accept a key and forget to check its IP allowlist.
 
     Resolves the model from ``TENANT_API_KEY_MODEL`` by default; set
     ``model`` on a subclass to skip the setting::
@@ -72,24 +78,16 @@ class TenantAPIKeyAuthentication(BaseAuthentication):
     def authenticate_credentials(
         self, raw_key: str, request: Request | None = None
     ) -> tuple[None, AbstractTenantAPIKey]:
-        model = self.get_model()
-        key_prefix, _sep, _secret = raw_key.partition(".")
-
+        # Without a request there's no client IP; a key restricted by
+        # ``allowed_ips`` then fails closed.
+        client_ip = get_client_ip(request) if request is not None else ""
         try:
-            api_key = model.objects.get(prefix=key_prefix)
-        except model.DoesNotExist as exc:
-            raise exceptions.AuthenticationFailed("Invalid API key.") from exc
-
-        if not api_key.verify_key(raw_key):
-            raise exceptions.AuthenticationFailed("Invalid API key.")
-
-        if not api_key.is_active:
-            raise exceptions.AuthenticationFailed("This API key has been deactivated.")
-
-        if api_key.expires_at is not None and api_key.expires_at < timezone.now():
-            raise exceptions.AuthenticationFailed("This API key has expired.")
-
-        api_key.record_usage()
+            api_key = authenticate_key(raw_key, model=self.get_model(), client_ip=client_ip)
+        except APIKeyRejected as exc:
+            message = client_message(exc.reason)
+            if exc.is_policy_violation:
+                raise exceptions.PermissionDenied(message) from exc
+            raise exceptions.AuthenticationFailed(message) from exc
 
         if request is not None and hasattr(api_key, "tenant"):
             request.tenant = api_key.tenant  # type: ignore[attr-defined]

@@ -110,38 +110,34 @@ an allowlist entry, so a restricted key fails closed.
 
 ## Enforcing the restriction
 
-### Django REST Framework
+`allowed_ips` is enforced **during authentication**, in both Django REST
+Framework and Django Ninja: a key used from an address outside its
+allowlist is refused with a 403 before your view (or any permission class)
+runs. There is nothing to add to a view, so a view can't accept the key and
+forget to check.
 
 ```python
-from django_tenant_apikeys.permissions import HasAllowedIP, HasAPIKeyScope
-
 class OrdersView(APIView):
     authentication_classes = [TenantAPIKeyAuthentication]
-    permission_classes = [HasAllowedIP, HasAPIKeyScope]
+    permission_classes = [HasAPIKeyScope]      # no IP class needed
     required_scopes = ["orders:read"]
 ```
 
-A request from outside `allowed_ips` gets a 403. `HasAllowedIP` reads
-`request.auth` (must be an API key instance — it returns `False` otherwise)
-and calls `get_client_ip(request)` / `is_ip_allowed()` internally.
+The client address comes from `get_client_ip(request)` (above). A key with
+`allowed_ips` set and *no* known client address — for example calling
+`TenantAPIKeyAuthentication().authenticate_credentials(raw_key)` without a
+request — is refused rather than waved through. `HasAllowedIP` remains for
+compatibility, but only repeats the check authentication already made; it's
+deprecated.
 
-### Django Ninja
+If you use the helpers yourself: `api_key.is_ip_allowed(get_client_ip(request))`.
 
-No permission-class system to hook into, so check inline — the same way
-[scopes](scopes.md) already are:
-
-```python
-from django_tenant_apikeys.ip import get_client_ip
-
-@api.get("/orders")
-def list_orders(request):
-    if not request.auth.is_ip_allowed(get_client_ip(request)):
-        return 403, {"detail": "IP not allowed"}
-    ...
-```
-
-See [Django Ninja](django-ninja.md) for how this composes with rate
-limiting and scope checks in one view.
+**Upgrading from 0.4:** before 0.5, `allowed_ips` was only checked where you
+had added `HasAllowedIP` (DRF) or an inline check (Ninja). Keys with
+`allowed_ips` set are now enforced everywhere, so any client calling from an
+address not on the list — or every client, if you're behind a proxy and
+haven't set `TENANT_API_KEY_TRUSTED_PROXY_HEADER` — starts getting 403s. Find
+the affected keys first: `OrganizationAPIKey.objects.exclude(allowed_ips=[])`.
 
 ## Next
 

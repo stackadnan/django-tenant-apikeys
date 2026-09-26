@@ -16,6 +16,7 @@ class Tenant(models.Model):
     """A minimal stand-in for a host project's own tenant/organization model."""
 
     name = models.CharField(max_length=100)
+    is_active = models.BooleanField(default=True)
 
     class Meta:
         app_label = "tests"
@@ -36,6 +37,10 @@ class TenantAPIKey(AbstractTenantAPIKey):
 
     class Meta(AbstractTenantAPIKey.Meta):
         app_label = "tests"
+
+    def is_tenant_allowed(self) -> bool:
+        # The documented hook: a suspended tenant's keys stop authenticating.
+        return self.tenant.is_active
 
 
 class UnlinkedAPIKey(AbstractTenantAPIKey):

@@ -10,6 +10,7 @@ from unittest import mock
 
 import pytest
 from django.core.cache import cache, caches
+from django.core.exceptions import ImproperlyConfigured
 from django.test import override_settings
 
 from django_tenant_apikeys.ratelimit import (
@@ -197,22 +198,30 @@ _DATABASE = {
 }
 
 
-class TestUnreliableCacheBackendsWarn:
+class TestUnreliableCacheBackends:
     """The limit is only as good as the cache underneath it; a backend that
-    can't enforce it must not fail *silently*."""
+    can't enforce it must not fail *silently*: DummyCache is refused, and the
+    lossy ones warn."""
 
     @override_settings(CACHES=_DUMMY)
-    def test_dummy_cache_warns_that_nothing_is_enforced(self) -> None:
-        with pytest.warns(RuntimeWarning, match="DummyCache"):
+    def test_dummy_cache_is_refused_outright(self) -> None:
+        # A rate_limit that can never apply is a silently disabled security
+        # control; better a loud configuration error than a fail-open limit.
+        with pytest.raises(ImproperlyConfigured, match="DummyCache"):
             CacheRateLimitBackend()
 
     @override_settings(CACHES=_DUMMY)
-    def test_dummy_cache_really_never_limits(self, tenant: Tenant) -> None:
-        # Documents the reason for the warning above.
+    def test_a_rate_limited_key_on_a_dummy_cache_errors_instead_of_passing(
+        self, tenant: Tenant
+    ) -> None:
         key = TenantAPIKey.generate_key(name="k", tenant=tenant, rate_limit=1)[0]
-        with pytest.warns(RuntimeWarning):
-            results = [check_rate_limit(key).allowed for _ in range(5)]
-        assert results == [True] * 5
+        with pytest.raises(ImproperlyConfigured):
+            check_rate_limit(key)
+
+    @override_settings(CACHES=_DUMMY)
+    def test_a_key_without_a_rate_limit_never_touches_the_cache(self, tenant: Tenant) -> None:
+        key = TenantAPIKey.generate_key(name="k", tenant=tenant)[0]
+        assert check_rate_limit(key).allowed is True
 
     @override_settings(CACHES=_DATABASE)
     def test_database_cache_warns_about_non_atomic_incr(self) -> None:

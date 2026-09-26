@@ -34,10 +34,20 @@ if api_key.environment != Environment.PRODUCTION:
     ...
 ```
 
-The package itself doesn't branch on `environment` anywhere except when
-building the key's prefix (below) — it's plain data for your application to
-read, the same as [metadata](metadata.md), just with a fixed, validated set
-of allowed values instead of arbitrary JSON.
+By default the package doesn't branch on `environment` except when building
+the key's prefix (below) — it's plain data for your application to read. To
+have the library *enforce* it, say which environments this deployment
+serves:
+
+```python
+# settings.py (production)
+TENANT_API_KEY_ALLOWED_ENVIRONMENTS = ["production"]
+```
+
+A key from any other environment is then refused during authentication
+(403), so a test or staging key can't be used against production even by
+accident. Unset (the default) means no enforcement; an empty list refuses
+everything.
 
 ## The prefix segment is a visual cue, not the source of truth
 
@@ -65,10 +75,9 @@ enough to eyeball a key's blast radius in a log line or an error report at
 a glance.
 
 **It is not authoritative.** Nothing in the package parses the prefix back
-out to decide anything — `is_active`, `is_expired`, scope checks, IP
-restrictions, and rate limiting are all identical regardless of which
-segment a key's prefix has. If your application code needs to know a key's
-environment, read `instance.environment`, never the prefix string.
+out to decide anything — enforcement and every other check use the
+`environment` column, never the prefix string. If your application code
+needs to know a key's environment, read `instance.environment`.
 
 ## Backward compatibility
 

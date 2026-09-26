@@ -21,6 +21,8 @@ from django.db import models, transaction
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
+from .signals import api_key_created, api_key_revoked, api_key_rotated, send_safely
+
 __all__ = [
     "generate_api_key",
     "get_api_key_model",
@@ -329,6 +331,24 @@ class AbstractTenantAPIKey(models.Model):
         editable=False,
         help_text=_("When this key last authenticated a request. Updated by record_usage()."),
     )
+    last_used_ip = models.GenericIPAddressField(
+        null=True,
+        blank=True,
+        editable=False,
+        help_text=_(
+            "Client IP of the last recorded use. Only written when "
+            "TENANT_API_KEY_RECORD_IP is enabled."
+        ),
+    )
+    rotated_from = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        editable=False,
+        on_delete=models.SET_NULL,
+        related_name="rotated_to",
+        help_text=_("The key this one replaced, if it was issued by rotate()."),
+    )
     revoked_at = models.DateTimeField(
         null=True,
         blank=True,
@@ -354,8 +374,8 @@ class AbstractTenantAPIKey(models.Model):
     #: Fields never copied onto the new row by rotate() -- identity, secret
     #: material, and per-row audit/lifecycle state all have to be fresh.
     _ROTATION_EXCLUDED_FIELDS: ClassVar[frozenset[str]] = frozenset(
-        {"id", "prefix", "hashed_key", "created_at", "last_used_at", "revoked_at",
-         "revoked_reason", "is_active"}
+        {"id", "prefix", "hashed_key", "created_at", "last_used_at", "last_used_ip",
+         "revoked_at", "revoked_reason", "is_active", "rotated_from"}
     )
 
     class Meta:
@@ -419,6 +439,7 @@ class AbstractTenantAPIKey(models.Model):
         full_key, key_prefix, hashed_key = generate_api_key(prefix=prefix, environment=environment)
         instance = cls(prefix=key_prefix, hashed_key=hashed_key, **kwargs)
         instance.save()
+        send_safely(api_key_created, cls, api_key=instance)
         return instance, full_key
 
     def verify_key(self, raw_key: str) -> bool:
@@ -453,6 +474,7 @@ class AbstractTenantAPIKey(models.Model):
         self.revoked_at = timezone.now()
         self.revoked_reason = reason
         self.save(update_fields=["is_active", "revoked_at", "revoked_reason"])
+        send_safely(api_key_revoked, type(self), api_key=self, reason=reason)
 
     def reactivate(self) -> None:
         """Undo :meth:`revoke`. Does not affect expiration -- reactivating
@@ -464,16 +486,31 @@ class AbstractTenantAPIKey(models.Model):
         self.save(update_fields=["is_active", "revoked_at", "revoked_reason"])
 
     def rotate(
-        self: _KeyModel, *, prefix: str | None = None, **overrides: Any
+        self: _KeyModel,
+        *,
+        prefix: str | None = None,
+        grace_period: timedelta | None = None,
+        **overrides: Any,
     ) -> tuple[_KeyModel, str]:
-        """Replace this key with a new one, revoking this row in the process.
+        """Replace this key with a new one.
 
         Every concrete-model field (``name``, ``scopes``, ``expires_at``, a
         subclass's ``tenant`` relation, anything else) carries over to the
         new row unchanged unless overridden via ``**overrides`` -- rotation
-        never needs to know what fields a subclass adds. This row is kept,
-        not deleted, so the old key remains visible for audit/history; it's
-        revoked with ``reason="rotated"`` and can never authenticate again.
+        never needs to know what fields a subclass adds. The new row's
+        ``rotated_from`` points back at this one, and this row is kept, not
+        deleted, so the old key stays visible for audit/history.
+
+        Without ``grace_period`` (the default) this key is revoked
+        immediately with ``reason="rotated"``: the right choice for a
+        compromised key.
+
+        With ``grace_period`` (a positive ``timedelta``) this key is *not*
+        revoked; its ``expires_at`` is set to ``now + grace_period`` (or left
+        alone if it already expires sooner -- a grace period never extends a
+        key's life), so both keys authenticate until then and the client can
+        switch over. A key that already has a live replacement can't be
+        rotated again.
 
         Returns ``(new_instance, raw_key)``, exactly like :meth:`generate_key`.
 
@@ -487,8 +524,11 @@ class AbstractTenantAPIKey(models.Model):
 
         Raises ``ValueError`` if this key is already inactive or expired --
         rotating a dead key would silently hand out working access from
-        something that was deliberately (or automatically) shut off.
+        something that was deliberately (or automatically) shut off -- if it
+        already has a live replacement, or if ``grace_period`` isn't positive.
         """
+        if grace_period is not None and grace_period <= timedelta(0):
+            raise ValueError(f"grace_period must be a positive timedelta, got {grace_period!r}")
         if prefix is None:
             prefix = _base_prefix(self.prefix)
         with transaction.atomic():
@@ -497,6 +537,16 @@ class AbstractTenantAPIKey(models.Model):
                 raise ValueError(
                     "Cannot rotate an inactive or expired key. Issue a new key "
                     "with generate_key() instead if you want to grant fresh access."
+                )
+            # (Built from a dict: django-stubs can't resolve a self-referential
+            # FK lookup declared on an abstract model.)
+            live_replacements = type(self).objects.filter(
+                **{"rotated_from": current, "is_active": True}
+            ).filter(models.Q(expires_at__isnull=True) | models.Q(expires_at__gt=timezone.now()))
+            if live_replacements.exists():
+                raise ValueError(
+                    "This key already has a live replacement; rotating it again would "
+                    "leave two. Revoke the replacement first if you really mean to."
                 )
             kwargs = {
                 field.name: getattr(current, field.name)
@@ -510,29 +560,78 @@ class AbstractTenantAPIKey(models.Model):
             kwargs["allowed_ips"] = list(kwargs["allowed_ips"])
             kwargs["metadata"] = dict(kwargs["metadata"])
             kwargs.update(overrides)
+            kwargs["rotated_from"] = current
             new_instance, raw_key = type(self).generate_key(prefix=prefix, **kwargs)
-            current.revoke(reason="rotated")
+            if grace_period is None:
+                current.revoke(reason="rotated")
+            else:
+                cutoff = timezone.now() + grace_period
+                if current.expires_at is None or current.expires_at > cutoff:
+                    current.expires_at = cutoff
+                    current.save(update_fields=["expires_at"])
         # Keep the caller's instance in step with what was just persisted.
         self.is_active = current.is_active
         self.revoked_at = current.revoked_at
         self.revoked_reason = current.revoked_reason
+        self.expires_at = current.expires_at
+        send_safely(
+            api_key_rotated,
+            type(self),
+            old_key=current,
+            new_key=new_instance,
+            grace_period=grace_period,
+        )
         return new_instance, raw_key
 
-    def record_usage(self) -> None:
+    def record_usage(self, ip: str | None = None) -> None:
         """Mark this key as used just now, throttled by ``LAST_USED_THRESHOLD``.
 
         Skips the write entirely if ``last_used_at`` is already within the
         threshold, so calling this on every authenticated request (which is
-        exactly what ``TenantAPIKeyAuthentication`` does) doesn't turn a hot
-        endpoint into a write on every single call. Uses a targeted
-        ``UPDATE`` via the manager rather than ``save()``, so it doesn't
-        re-validate or re-save the rest of the row.
+        exactly what authentication does) doesn't turn a hot endpoint into a
+        write on every single call. Uses a targeted ``UPDATE`` via the
+        manager rather than ``save()``, so it doesn't re-validate or re-save
+        the rest of the row.
+
+        ``ip``, if given and a valid address, is stored as ``last_used_ip``.
+        A *changed* address is written immediately rather than waiting out
+        the threshold, so the field never lags a move to a new address by up
+        to ``LAST_USED_THRESHOLD``. Anything that isn't a valid IP address is
+        ignored, never stored.
         """
+        if ip is not None:
+            try:
+                ipaddress.ip_address(ip)
+            except ValueError:
+                ip = None
         now = timezone.now()
-        if self.last_used_at is not None and now - self.last_used_at < self.LAST_USED_THRESHOLD:
+        ip_changed = ip is not None and ip != self.last_used_ip
+        recently_used = (
+            self.last_used_at is not None and now - self.last_used_at < self.LAST_USED_THRESHOLD
+        )
+        if recently_used and not ip_changed:
             return
-        type(self).objects.filter(pk=self.pk).update(last_used_at=now)
+        updates: dict[str, Any] = {"last_used_at": now}
+        if ip is not None:
+            updates["last_used_ip"] = ip
+        type(self).objects.filter(pk=self.pk).update(**updates)
         self.last_used_at = now
+        if ip is not None:
+            self.last_used_ip = ip
+
+    def is_tenant_allowed(self) -> bool:
+        """Hook: return ``False`` to refuse authentication for this key
+        because of its tenant's state (suspended, unpaid, ...). The default
+        allows everything -- this package doesn't know what a tenant is.
+        Override on your concrete model::
+
+            def is_tenant_allowed(self) -> bool:
+                return self.tenant.is_active
+
+        Called after the key itself has been fully verified, so ``self.tenant``
+        is already loaded (authentication joins it in the same query).
+        """
+        return True
 
     def has_scope(self, required_scope: str) -> bool:
         """True if ``scopes`` grants ``required_scope`` -- exact match,

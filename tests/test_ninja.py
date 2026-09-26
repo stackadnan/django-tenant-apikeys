@@ -150,3 +150,27 @@ class TestGetModel:
         auth = TenantAPIKeyAuth()
         auth.model = UnlinkedAPIKey
         assert auth.get_model() is UnlinkedAPIKey
+
+
+class TestScopesArgument:
+    def test_a_bare_string_is_rejected_at_construction(self) -> None:
+        # ``scopes="orders:read"`` would otherwise iterate character by character.
+        with pytest.raises(TypeError, match="not a single string"):
+            TenantAPIKeyAuth(scopes="orders:read")  # type: ignore[arg-type]
+
+    def test_no_scopes_means_any_authenticated_key(self, tenant: Tenant) -> None:
+        instance, raw_key = TenantAPIKey.generate_key(name="k", tenant=tenant)
+        result = TenantAPIKeyAuth().authenticate(build_request(), f"Api-Key {raw_key}")
+        assert result is not None
+        assert result.pk == instance.pk
+
+    def test_every_listed_scope_is_required(self, tenant: Tenant) -> None:
+        from ninja.errors import HttpError
+
+        _instance, raw_key = TenantAPIKey.generate_key(
+            name="k", tenant=tenant, scopes=["orders:read"]
+        )
+        auth = TenantAPIKeyAuth(scopes=["orders:read", "orders:write"])
+        with pytest.raises(HttpError) as excinfo:
+            auth.authenticate(build_request(), f"Api-Key {raw_key}")
+        assert excinfo.value.status_code == 403
