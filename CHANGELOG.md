@@ -13,83 +13,61 @@ No unreleased changes yet.
 
 ## [0.4.1] - 2026-09-26
 
-Security and correctness fixes; no new features, **no migration required**.
+Security and bug-fix release. No new features and no migration required.
+If you use `allowed_ips` behind a reverse proxy, please upgrade and read the
+upgrade notes below.
 
 ### Security
 
-- **`get_client_ip()` no longer trusts client-controlled `X-Forwarded-For`
-  entries.** With `TENANT_API_KEY_TRUSTED_PROXY_HEADER` set it previously
-  returned the *leftmost* entry, which is the one a client writes itself:
-  behind a proxy that appends to the header (nginx `$proxy_add_x_forwarded_for`,
-  AWS ALB, Cloudflare), anyone holding a key could prepend an allowed address
-  and pass `allowed_ips`. It now takes the entry
-  `TENANT_API_KEY_TRUSTED_PROXY_COUNT` (new setting, default `1`) from the
-  **right**. If the header is missing or shorter than that count it falls
-  back to `REMOTE_ADDR`.
-- `has_scope()` and `is_ip_allowed()` fail closed on malformed data. A bare
-  string in `scopes` (possible via the admin, a fixture, or a raw ORM call --
-  only `generate_key()` validated it) used to be searched as a substring:
-  `scopes="orders:read"` granted `"orders"`, `"ord"` and `":"`. It now grants
-  nothing. A non-list `allowed_ips` denies every IP instead of iterating its
-  characters.
-- `rotate()` re-reads the key under `SELECT ... FOR UPDATE` and re-checks its
-  validity inside the transaction. Two concurrent rotations, or rotating a
-  stale instance, could previously both succeed and leave two live
-  replacement keys; the second now raises `ValueError`. (Row locks are a
-  no-op on SQLite.)
-- The Django admin no longer shows `hashed_key`.
+- **The IP allowlist could be bypassed through `X-Forwarded-For`.** With
+  `TENANT_API_KEY_TRUSTED_PROXY_HEADER` set, the client IP was taken from the
+  first entry of the header, which is the entry the client writes itself.
+  Behind a proxy that appends to the header (nginx, AWS ALB, Cloudflare), a
+  caller holding a valid key could prepend an allowed address and pass
+  `allowed_ips`. The client IP is now read from the right of the header, as
+  many entries in as the new `TENANT_API_KEY_TRUSTED_PROXY_COUNT` setting
+  says (default `1`). If the header is missing or shorter than that,
+  `REMOTE_ADDR` is used.
+- **Malformed `scopes` no longer over-grant.** A `scopes` value stored as a
+  plain string (for example through the admin) was matched as text, so
+  `"orders:read"` also granted `"orders"`. Malformed `scopes` now grant
+  nothing, and a malformed `allowed_ips` denies every address.
+- **Concurrent rotation could leave two live keys.** `rotate()` now locks the
+  key while it rotates it, so a second, concurrent rotation of the same key
+  raises `ValueError` instead of issuing another replacement.
 
 ### Fixed
 
-- `rotate()` kept a custom key prefix only if you passed `prefix=` again; it
-  otherwise reset it to `"tak"`, including from `tenant_api_key_rotate`. The
-  original prefix is now preserved.
-- The admin ignored the chosen `environment` when minting a key (an
-  `environment="test"` key got a `tak_live_` prefix), and bypassed
-  `generate_key()`'s validation. `AbstractTenantAPIKey.clean()` now applies
-  the same `scopes`/`allowed_ips`/`rate_limit` rules to the admin, model
-  forms and `full_clean()`.
-- The admin `is_active` checkbox now keeps `revoked_at`/`revoked_reason` in
-  step, instead of leaving a key active-but-"revoked" or revoked-but-undated.
-- `revoke()` is idempotent: a repeated call no longer overwrites the first
-  revocation's `revoked_at`/`revoked_reason`.
-- `is_ip_allowed()` matches IPv4-mapped IPv6 clients (`::ffff:203.0.113.5`)
-  against IPv4 entries.
-- `is_expired` and `get_usable_keys()` agree at the exact expiry instant.
-- `CacheRateLimitBackend` emits a `RuntimeWarning` on a `DummyCache` (the
-  limit is never enforced), `DatabaseCache` or `FileBasedCache` (`incr()`
-  isn't atomic, so the limit can be exceeded).
+- `rotate()` and `tenant_api_key_rotate` keep the key's original prefix
+  instead of resetting it to `tak`.
+- Keys created in the Django admin use the selected environment (a `test`
+  key now gets a `_test_` prefix) and are validated:
+  `AbstractTenantAPIKey.clean()` checks `scopes`, `allowed_ips` and
+  `rate_limit` in the admin, in model forms and in `full_clean()`.
+- In the admin, the `is_active` checkbox keeps `revoked_at` and
+  `revoked_reason` consistent, and `hashed_key` is no longer displayed.
+- `revoke()` is idempotent: revoking an already revoked key no longer
+  overwrites its original reason and timestamp.
+- Clients connecting as IPv4-mapped IPv6 addresses (`::ffff:203.0.113.5`) now
+  match IPv4 entries in `allowed_ips`.
+- `CacheRateLimitBackend` now warns when the rate-limit cache is a
+  `DummyCache`, `DatabaseCache` or `FileBasedCache`, none of which can
+  enforce a limit reliably.
 
-### Documentation
+### Added
 
-- Corrected claims the code didn't support: `X-Forwarded-For` semantics,
-  that `add()`/`incr()` are "atomic on any real cache backend" (only Redis,
-  Memcached and LocMemCache), and that no response distinguishes a
-  deactivated or expired key (the DRF backend does, once the secret has
-  verified).
+- Django 6.1 is tested and listed as supported.
 
-### Packaging and CI
+### Upgrade notes
 
-- `publish.yml` now runs the full test suite first and checks that the
-  release tag matches `__version__`; previously a red build could still
-  publish.
-- CI adds Django 6.1 and drops the Django 4.2 x Python 3.13/3.14 and
-  Django 6.1 x Python 3.10/3.11 combinations those versions don't support.
-- The `Changelog` project URL points at `CHANGELOG.md`, which is now in the
-  sdist; the coverage exclusion for `...` only matches bare `...` lines.
-
-### Compatibility
-
-Backward compatible except for two deliberate behaviour changes:
-
-- **Behind more than one trusted proxy** with
-  `TENANT_API_KEY_TRUSTED_PROXY_HEADER` set, set
-  `TENANT_API_KEY_TRUSTED_PROXY_COUNT` to the number of proxy hops. Without
-  it, `get_client_ip()` returns the rightmost entry (your last proxy) and
-  `allowed_ips` will reject legitimate clients -- previously the spoofable
-  leftmost entry was used. One proxy, or a proxy that overwrites the header,
-  needs no change.
-- Repeated `revoke()` calls no longer replace the stored reason/timestamp.
+- **If more than one trusted proxy sits in front of Django** and you set
+  `TENANT_API_KEY_TRUSTED_PROXY_HEADER`, also set
+  `TENANT_API_KEY_TRUSTED_PROXY_COUNT` to the number of proxies. Otherwise
+  `allowed_ips` will reject legitimate clients, because the address read from
+  the header is now your last proxy. With a single proxy, or a proxy that
+  overwrites the header, nothing changes.
+- Calling `revoke()` on an already revoked key no longer replaces the stored
+  reason and timestamp.
 
 ## [0.4.0] - 2026-09-06
 
