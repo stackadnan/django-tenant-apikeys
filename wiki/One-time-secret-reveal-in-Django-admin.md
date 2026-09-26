@@ -17,7 +17,7 @@ again" actually hold:
 
 ```python
 list_display = ("name", "masked_key", "is_active", "created_at", "expires_at", "last_used_at")
-readonly_fields = ("prefix", "hashed_key", "created_at", "last_used_at")
+readonly_fields = ("prefix", "created_at", "last_used_at")  # plus revoked_at/reason
 
 @admin.display(description="Key")
 def masked_key(self, obj: AbstractTenantAPIKey) -> str:
@@ -28,10 +28,11 @@ def masked_key(self, obj: AbstractTenantAPIKey) -> str:
    anything from `hashed_key` at all, masked or otherwise. It shows the
    public `prefix` and a fixed run of bullet characters, which is enough
    to recognize *which* key a row is without exposing anything secret.
-2. **`prefix` and `hashed_key` in `readonly_fields`** — even on the
-   individual change form, these fields render as plain text, not
-   inputs. There's no form field to tamper with to make the admin accept
-   an attacker-chosen hash.
+2. **`prefix` in `readonly_fields`, `hashed_key` not rendered at all** —
+   both are `editable=False`, so neither is ever a form input. `prefix`
+   is shown as plain text; `hashed_key` isn't shown anywhere (it's useless
+   to an admin, and there's no reason to display it). There's no form
+   field to tamper with to make the admin accept an attacker-chosen hash.
 3. **`save_model`**, which does the actual generation and one-time
    display.
 
@@ -63,8 +64,8 @@ kind of surprise rotation covered in
 [Rotating and expiring API keys](https://github.com/stackadnan/django-tenant-apikeys/wiki/Rotating-and-expiring-API-keys-in-Django-without-breaking-existing-clients).
 
 On create, `generate_api_key()` is called server-side, ignoring whatever
-the submitted form contained — `prefix` and `hashed_key` are `readonly_fields`
-so the form doesn't even have real inputs for them, but the admin doesn't
+the submitted form contained — `prefix` and `hashed_key` are `editable=False`
+so the form doesn't even have inputs for them, but the admin doesn't
 rely on that alone; it overwrites `obj.prefix`/`obj.hashed_key` explicitly
 before saving. Two independent reasons the value is trustworthy, not one.
 

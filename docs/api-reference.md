@@ -175,4 +175,5 @@ See [Management commands](management-commands.md).
 
 See [Configuration](configuration.md) for the complete list:
 `TENANT_API_KEY_MODEL`, `TENANT_API_KEY_TRUSTED_PROXY_HEADER`,
+`TENANT_API_KEY_TRUSTED_PROXY_COUNT`,
 `TENANT_API_KEY_RATE_LIMIT_CACHE`, `TENANT_API_KEY_RATE_LIMIT_BACKEND`.

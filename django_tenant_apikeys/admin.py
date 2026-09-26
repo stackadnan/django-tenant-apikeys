@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from django.contrib import admin, messages
 from django.db.models import QuerySet
 from django.http import HttpRequest
+from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.safestring import SafeString
 
@@ -42,9 +43,10 @@ class TenantAPIKeyAdmin(_TenantAPIKeyAdminBase):
     )
     list_filter = ("is_active", "environment", "created_at", "expires_at")
     search_fields = ("name", "prefix")
+    # ``hashed_key`` is deliberately absent: it's ``editable=False`` (so it
+    # never appears as an input), and there's no reason to render it either.
     readonly_fields = (
         "prefix",
-        "hashed_key",
         "created_at",
         "last_used_at",
         "revoked_at",
@@ -82,12 +84,25 @@ class TenantAPIKeyAdmin(_TenantAPIKeyAdminBase):
         change: bool,
     ) -> None:
         if change:
+            if "is_active" in getattr(form, "changed_data", ()):
+                # The checkbox is a second way to revoke/reactivate; keep
+                # ``revoked_at``/``revoked_reason`` in step with it so a key
+                # can't end up active-but-"revoked" or revoked-but-undated.
+                if obj.is_active:
+                    obj.revoked_at = None
+                    obj.revoked_reason = ""
+                elif obj.revoked_at is None:
+                    obj.revoked_at = timezone.now()
+                    obj.revoked_reason = "deactivated via admin"
             super().save_model(request, obj, form, change)
             return
 
         # Mint the prefix/hash here rather than trusting form data, then
         # save obj itself so the add-view redirect points at the real row.
-        full_key, key_prefix, hashed_key = generate_api_key()
+        # ``environment`` comes from the form so the ``_live_``/``_test_``
+        # prefix segment matches the column; scopes/allowed_ips/rate_limit
+        # were already checked by the model's ``clean()`` via the form.
+        full_key, key_prefix, hashed_key = generate_api_key(environment=obj.environment)
         obj.prefix = key_prefix
         obj.hashed_key = hashed_key
         super().save_model(request, obj, form, change)

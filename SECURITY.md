@@ -32,14 +32,18 @@ Out of scope:
   before it. Pair `TenantAPIKeyAuthentication`/`TenantAPIKeyAuth` with a
   DRF throttle class (or your reverse proxy) if guessing protection at the
   authentication step matters for your deployment.
-- Cross-process consistency of the default rate-limit backend. It's
-  correct under concurrent requests within one process; multiple worker
-  processes sharing a single limit requires pointing `CACHES["default"]`
-  at a backend that supports atomic operations across processes
-  (Memcached, a shared Redis), which is a deployment choice, not something
-  this library can guarantee on its own.
-- Multi-hop trusted-proxy-chain validation for `TENANT_API_KEY_TRUSTED_PROXY_HEADER`.
-  It reads the first entry of a configured header, assuming a single
-  trusted reverse proxy in front of Django.
+- Rate-limit accuracy beyond what the configured Django cache provides.
+  The default backend is exact only on a cache whose `add()`/`incr()` are
+  atomic and shared across workers (Memcached, a shared Redis).
+  LocMemCache is per-process; DatabaseCache and FileBasedCache can lose
+  increments under concurrency; DummyCache enforces nothing (the library
+  emits a `RuntimeWarning` for all three). Choosing the cache is a
+  deployment decision this library can't make for you.
+- Verifying that the proxy setup behind `TENANT_API_KEY_TRUSTED_PROXY_HEADER`
+  is what you think it is. With the setting on, the client IP is the
+  `TENANT_API_KEY_TRUSTED_PROXY_COUNT`-th entry from the right of that
+  header (default: the rightmost). That's only correct if that many
+  trusted proxies sit in front of Django and the header can't reach it any
+  other way.
 - How a consuming project configures `TENANT_API_KEY_MODEL`, stores keys
   client-side, or transmits them (e.g. logging the `Authorization` header).

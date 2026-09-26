@@ -9,10 +9,11 @@ page covers the overlap pattern that avoids that, using
 actual fields: `expires_at`, `is_active`, `is_expired`, `is_valid`, and
 `last_used_at`.
 
-There's no dedicated `rotate_key()` helper in the package today — what
-follows is a pattern built from the primitives that exist, not a single
-method call. (If you want one, that's a reasonable thing to open an issue
-for.)
+Since 0.3.0 the package has `api_key.rotate()`, which issues a replacement
+and revokes the original **immediately** -- right for a compromised key,
+wrong if the client needs time to switch. What follows is the overlap
+pattern for that second case, built from the same primitives (`expires_at`,
+`is_active`, `last_used_at`) rather than a single method call.
 
 ## Why in-place regeneration breaks clients
 

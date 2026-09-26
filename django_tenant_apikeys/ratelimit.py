@@ -5,18 +5,23 @@ The default backend counts requests in Django's cache framework (whatever
 at). That's deliberately not Redis-only: it works out of the box with
 LocMemCache, and transparently gets cross-process correctness for free if
 the project's cache is already Memcached or a shared Redis. See
-``CacheRateLimitBackend`` for the concurrency approach and its limits.
+``CacheRateLimitBackend`` for which cache backends actually give you an
+enforceable limit.
 """
 
 from __future__ import annotations
 
 import time
+import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
 from django.conf import settings
 from django.core.cache import BaseCache
 from django.core.cache import caches as _caches
+from django.core.cache.backends.db import DatabaseCache
+from django.core.cache.backends.dummy import DummyCache
+from django.core.cache.backends.filebased import FileBasedCache
 from django.utils.module_loading import import_string
 
 if TYPE_CHECKING:
@@ -73,17 +78,28 @@ class RateLimitBackend(Protocol):
 class CacheRateLimitBackend:
     """Fixed-window counter stored in a Django cache.
 
-    Uses ``cache.add()`` (atomic set-if-absent) to seed the window's counter
-    and ``cache.incr()`` (atomic increment) to count the request, rather
-    than a get-then-set round trip -- two requests racing to initialize the
-    same window can't both reset the count to 1, and two requests racing to
-    increment it can't both read the same starting value and stomp on each
-    other. Both operations are atomic *for the cache backend in use*: with
-    the default LocMemCache that's only true within a single process, so
-    multiple worker processes each enforce the limit independently rather
-    than sharing one count. Point ``TENANT_API_KEY_RATE_LIMIT_CACHE`` (or
-    ``CACHES["default"]``) at Memcached or a shared Redis for a limit that
-    holds across processes -- the counting logic here doesn't change.
+    Uses ``cache.add()`` (set-if-absent) to seed the window's counter and
+    ``cache.incr()`` (increment) to count the request, rather than a
+    get-then-set round trip. Whether those two calls are *atomic* is a
+    property of the Django cache backend, not of this class:
+
+    ==================  ==============================================
+    Backend             Behaviour
+    ==================  ==============================================
+    Redis, Memcached    Atomic on the server, correct across processes.
+    LocMemCache         Atomic (lock) but per-process: each worker
+                        process keeps its own count.
+    DatabaseCache       ``incr()`` is a read-then-write, so concurrent
+                        requests can lose increments -- the limit can
+                        be exceeded. Warns at construction.
+    FileBasedCache      Same as DatabaseCache, and ``add()`` isn't
+                        atomic either. Warns at construction.
+    DummyCache          Stores nothing, so the limit is never enforced.
+                        Warns at construction.
+    ==================  ==============================================
+
+    Point ``TENANT_API_KEY_RATE_LIMIT_CACHE`` (or ``CACHES["default"]``) at
+    Memcached or a shared Redis for a limit that holds across processes.
 
     Being a fixed window rather than a sliding one, a key can burst up to
     ~2x its limit across a window boundary (e.g. a full minute's quota just
@@ -98,6 +114,23 @@ class CacheRateLimitBackend:
             cache_alias = getattr(settings, "TENANT_API_KEY_RATE_LIMIT_CACHE", "default")
             cache = _caches[cache_alias]
         self.cache = cache
+        if isinstance(cache, DummyCache):
+            warnings.warn(
+                "The rate-limit cache is a DummyCache, which stores nothing: "
+                "every key's rate_limit is silently unenforced. Point "
+                "TENANT_API_KEY_RATE_LIMIT_CACHE at a real cache.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+        elif isinstance(cache, (DatabaseCache, FileBasedCache)):
+            warnings.warn(
+                f"The rate-limit cache is a {type(cache).__name__}, whose incr() is "
+                "not atomic: concurrent requests can be undercounted, so a key's "
+                "rate_limit can be exceeded. Use Redis or Memcached for a "
+                "reliable limit.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
 
     def hit(self, key: str, limit: int, window_seconds: int) -> RateLimitResult:
         now = time.time()

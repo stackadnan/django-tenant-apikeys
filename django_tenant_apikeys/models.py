@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import hashlib
 import ipaddress
+import re
 import secrets
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
 from django.apps import apps
 from django.conf import settings
-from django.core.exceptions import ImproperlyConfigured
+from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.db import models, transaction
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
@@ -76,6 +77,18 @@ _ENVIRONMENT_PREFIX_SEGMENT = {
     Environment.DEVELOPMENT: "test",
     Environment.TEST: "test",
 }
+
+
+_GENERATED_PREFIX_RE = re.compile(r"^(?P<base>.+)_(?:live|test)_[0-9a-f]{8}$")
+
+
+def _base_prefix(key_prefix: str) -> str:
+    """The caller-chosen ``prefix`` a stored ``key_prefix`` was generated
+    from (``"acme_live_3f9a2c1d"`` -> ``"acme"``), or the ``"tak"`` default
+    if it doesn't look like a generated prefix. Lets ``rotate()`` keep a
+    key's custom prefix instead of silently resetting it."""
+    match = _GENERATED_PREFIX_RE.match(key_prefix)
+    return match.group("base") if match else "tak"
 
 
 def hash_key(raw_key: str) -> str:
@@ -357,6 +370,29 @@ class AbstractTenantAPIKey(models.Model):
     def __repr__(self) -> str:
         return f"<{type(self).__name__}: prefix={self.prefix!r}>"
 
+    def clean(self) -> None:
+        """Model-level validation, so the same rules ``generate_key()`` applies
+        also hold for the Django admin, model forms, and ``full_clean()``.
+
+        ``scopes``, ``allowed_ips`` and ``rate_limit`` are free-form
+        ``JSONField``/integer columns; without this, only keys created via
+        ``generate_key()`` were checked. Subclasses overriding ``clean()``
+        should call ``super().clean()``.
+        """
+        super().clean()
+        errors: dict[str, str] = {}
+        for field, validator, args in (
+            ("scopes", _validate_scopes, (self.scopes,)),
+            ("allowed_ips", _validate_allowed_ips, (self.allowed_ips,)),
+            ("rate_limit", _validate_rate_limit, (self.rate_limit, self.rate_limit_window)),
+        ):
+            try:
+                validator(*args)
+            except ValueError as exc:
+                errors[field] = str(exc)
+        if errors:
+            raise ValidationError(errors)
+
     @classmethod
     def generate_key(
         cls: type[_KeyModel], *, prefix: str = "tak", **kwargs: Any
@@ -391,7 +427,7 @@ class AbstractTenantAPIKey(models.Model):
 
     @property
     def is_expired(self) -> bool:
-        return self.expires_at is not None and self.expires_at < timezone.now()
+        return self.expires_at is not None and self.expires_at <= timezone.now()
 
     @property
     def is_valid(self) -> bool:
@@ -403,7 +439,16 @@ class AbstractTenantAPIKey(models.Model):
         Sets the same ``is_active`` flag that authentication already checks
         -- there's no separate "revoked" enforcement path to keep in sync.
         ``revoked_at``/``revoked_reason`` are audit metadata only.
+
+        Idempotent: revoking a key that's already revoked leaves its original
+        ``revoked_at``/``revoked_reason`` untouched, so a repeated call (a
+        second admin click, a re-run command) can't overwrite the audit
+        trail of the first. ("Permanently" here means "until an explicit
+        :meth:`reactivate`" -- reactivation is a deliberate, supported
+        rollback, e.g. undoing a rotation that didn't deploy.)
         """
+        if not self.is_active and self.revoked_at is not None:
+            return
         self.is_active = False
         self.revoked_at = timezone.now()
         self.revoked_reason = reason
@@ -419,7 +464,7 @@ class AbstractTenantAPIKey(models.Model):
         self.save(update_fields=["is_active", "revoked_at", "revoked_reason"])
 
     def rotate(
-        self: _KeyModel, *, prefix: str = "tak", **overrides: Any
+        self: _KeyModel, *, prefix: str | None = None, **overrides: Any
     ) -> tuple[_KeyModel, str]:
         """Replace this key with a new one, revoking this row in the process.
 
@@ -432,30 +477,45 @@ class AbstractTenantAPIKey(models.Model):
 
         Returns ``(new_instance, raw_key)``, exactly like :meth:`generate_key`.
 
+        The row is re-read under a ``SELECT ... FOR UPDATE`` lock inside the
+        transaction, so a stale instance (loaded before another request or
+        worker already rotated/revoked the key) or two concurrent rotations
+        can't both succeed and leave two live replacements. Field values are
+        copied from that fresh row, not from unsaved in-memory edits on
+        ``self``. ``prefix`` defaults to the one this key was originally
+        generated with (``"acme_live_..."`` rotates to ``"acme_live_..."``).
+
         Raises ``ValueError`` if this key is already inactive or expired --
         rotating a dead key would silently hand out working access from
         something that was deliberately (or automatically) shut off.
         """
-        if not self.is_valid:
-            raise ValueError(
-                "Cannot rotate an inactive or expired key. Issue a new key "
-                "with generate_key() instead if you want to grant fresh access."
-            )
-        kwargs = {
-            field.name: getattr(self, field.name)
-            for field in self._meta.fields
-            if field.name not in self._ROTATION_EXCLUDED_FIELDS
-        }
-        # JSONField values (scopes, allowed_ips, metadata) -- copy them so
-        # mutating the new key's copy in memory can't reach back and mutate
-        # this row's too.
-        kwargs["scopes"] = list(kwargs["scopes"])
-        kwargs["allowed_ips"] = list(kwargs["allowed_ips"])
-        kwargs["metadata"] = dict(kwargs["metadata"])
-        kwargs.update(overrides)
+        if prefix is None:
+            prefix = _base_prefix(self.prefix)
         with transaction.atomic():
+            current = type(self).objects.select_for_update().get(pk=self.pk)
+            if not current.is_valid:
+                raise ValueError(
+                    "Cannot rotate an inactive or expired key. Issue a new key "
+                    "with generate_key() instead if you want to grant fresh access."
+                )
+            kwargs = {
+                field.name: getattr(current, field.name)
+                for field in current._meta.fields
+                if field.name not in self._ROTATION_EXCLUDED_FIELDS
+            }
+            # JSONField values (scopes, allowed_ips, metadata) -- copy them so
+            # mutating the new key's copy in memory can't reach back and mutate
+            # this row's too.
+            kwargs["scopes"] = list(kwargs["scopes"])
+            kwargs["allowed_ips"] = list(kwargs["allowed_ips"])
+            kwargs["metadata"] = dict(kwargs["metadata"])
+            kwargs.update(overrides)
             new_instance, raw_key = type(self).generate_key(prefix=prefix, **kwargs)
-            self.revoke(reason="rotated")
+            current.revoke(reason="rotated")
+        # Keep the caller's instance in step with what was just persisted.
+        self.is_active = current.is_active
+        self.revoked_at = current.revoked_at
+        self.revoked_reason = current.revoked_reason
         return new_instance, raw_key
 
     def record_usage(self) -> None:
@@ -477,7 +537,10 @@ class AbstractTenantAPIKey(models.Model):
     def has_scope(self, required_scope: str) -> bool:
         """True if ``scopes`` grants ``required_scope`` -- exact match,
         global ``"*"``, or a namespaced ``"orders:*"`` wildcard."""
-        if not self.scopes:
+        # Fail closed on malformed data (e.g. a bare string written by a
+        # fixture or a raw ORM call): ``in`` on a str is a substring test,
+        # which would over-grant.
+        if not isinstance(self.scopes, (list, tuple)) or not self.scopes:
             return False
         if required_scope in self.scopes:
             return True
@@ -505,14 +568,19 @@ class AbstractTenantAPIKey(models.Model):
         """
         if not self.allowed_ips:
             return True
+        if not isinstance(self.allowed_ips, (list, tuple)):
+            return False
         try:
             client = ipaddress.ip_address(client_ip)
         except ValueError:
             return False
+        if isinstance(client, ipaddress.IPv6Address) and client.ipv4_mapped is not None:
+            # A dual-stack socket reports IPv4 clients as ``::ffff:a.b.c.d``.
+            client = client.ipv4_mapped
         for entry in self.allowed_ips:
             try:
                 network = ipaddress.ip_network(entry, strict=False)
-            except ValueError:
+            except (TypeError, ValueError):
                 continue
             if client in network:
                 return True

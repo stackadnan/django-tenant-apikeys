@@ -76,24 +76,37 @@ the one setting it, *and* stripping any client-supplied copy of that header
 before your proxy adds its own — otherwise a client can still forge the
 value your proxy passes through untouched.
 
-When the setting is on, `get_client_ip()` reads only the **first** entry of
-the header:
+When the setting is on, `get_client_ip()` picks one entry from the header
+by counting from the **right**:
 
 ```python
-# HTTP_X_FORWARDED_FOR: "198.51.100.1, 10.0.0.1, 10.0.0.2"
-get_client_ip(request)  # "198.51.100.1"
+# HTTP_X_FORWARDED_FOR: "192.168.1.10, 198.51.100.7"
+#                        ^ sent by the client   ^ appended by your proxy
+get_client_ip(request)  # "198.51.100.7"  (the default: one trusted proxy)
 ```
 
-This assumes a single trusted reverse proxy directly in front of Django,
-appending the real client's address as the first (leftmost) entry. It does
-**not** implement multi-hop trusted-proxy-chain validation (walking the
-list from the right and trusting only entries added by known proxies,
-similar to what Django's own
-[`SECURE_PROXY_SSL_HEADER`](https://docs.djangoproject.com/en/stable/ref/settings/#secure-proxy-ssl-header)
-handles for a different header). If you're behind more than one proxy
-hop, resolve the real client IP at the edge (or in middleware you control)
-and set `TENANT_API_KEY_TRUSTED_PROXY_HEADER` to a header your own
-infrastructure guarantees contains only that address.
+Every proxy *appends* the address of the peer it received the request
+from, so anything to the **left** was written by the client (or an earlier,
+untrusted hop) and is never used. Only the entries your own proxies added —
+on the right — mean anything. That's why the default is the rightmost entry,
+and why reading the leftmost one would let any caller who holds a stolen key
+prepend an address from the allowlist.
+
+If more than one trusted proxy sits in front of Django, say how many:
+
+```python
+# client -> CDN -> load balancer -> Django
+TENANT_API_KEY_TRUSTED_PROXY_COUNT = 2   # default: 1
+```
+
+The client is then the 2nd entry from the right. If the header has fewer
+entries than that (the request didn't pass through every expected proxy) or
+is missing, `get_client_ip()` falls back to `REMOTE_ADDR`. A proxy that
+*overwrites* the header with a single address, or a single-valued header
+like `X-Real-IP`, works with the default.
+
+A value that isn't an IP address is returned as-is and simply never matches
+an allowlist entry, so a restricted key fails closed.
 
 ## Enforcing the restriction
 

@@ -29,6 +29,7 @@ classifiers = [
     "Framework :: Django",
     "Framework :: Django :: 4.2",
     "Framework :: Django :: 5.2",
+    "Framework :: Django :: 6.1",
     "Intended Audience :: Developers",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
@@ -79,7 +80,7 @@ Homepage = "https://github.com/stackadnan/django-tenant-apikeys"
 Documentation = "https://stackadnan.github.io/django-tenant-apikeys/"
 Repository = "https://github.com/stackadnan/django-tenant-apikeys"
 Issues = "https://github.com/stackadnan/django-tenant-apikeys/issues"
-Changelog = "https://github.com/stackadnan/django-tenant-apikeys/releases"
+Changelog = "https://github.com/stackadnan/django-tenant-apikeys/blob/main/CHANGELOG.md"
 
 [tool.hatch.version]
 path = "django_tenant_apikeys/__init__.py"
@@ -92,6 +93,7 @@ include = [
     "/django_tenant_apikeys",
     "/tests",
     "/README.md",
+    "/CHANGELOG.md",
     "/LICENSE",
 ]
 
@@ -111,7 +113,9 @@ show_missing = true
 exclude_lines = [
     "pragma: no cover",
     "if TYPE_CHECKING:",
-    "\\.\\.\\.",
+    # A bare ``...`` line (Protocol/abstract bodies), not any line containing
+    # three dots.
+    "^\\s*\\.\\.\\.$",
     "raise NotImplementedError",
 ]
 

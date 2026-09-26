@@ -79,8 +79,8 @@ scope checks.
 cache framework — `CACHES["default"]`, or whichever alias
 `TENANT_API_KEY_RATE_LIMIT_CACHE` names.
 
-It uses `cache.add()` (atomic set-if-absent) to seed a window's counter and
-`cache.incr()` (atomic increment) to count each request, instead of a
+It uses `cache.add()` (set-if-absent) to seed a window's counter and
+`cache.incr()` (increment) to count each request, instead of a
 get-then-set round trip:
 
 ```python
@@ -91,12 +91,22 @@ cache.set(key, count)
 
 That pattern races: two concurrent requests can both read the same starting
 value and both write back `count + 1`, undercounting by one every time two
-requests overlap. `add()` + `incr()` avoids it — both operations are atomic
-on any real Django cache backend, so two requests racing to initialize the
-same window can't both reset it to 1, and two requests racing to increment
-it can't both clobber the same starting value.
+requests overlap. `add()` + `incr()` avoids it **only if the cache backend
+implements them atomically**. Django's base `incr()` is itself a
+read-then-write, and only some backends override it — see the table below.
 
 ### Consistency depends on the cache backend
+
+| Cache backend | `add()`/`incr()` | Effect on the limit |
+|---|---|---|
+| Redis, Memcached | atomic on the server | exact, shared across processes |
+| `LocMemCache` | atomic within a process (lock) | per-process: each worker counts separately |
+| `DatabaseCache` | `incr()` is get-then-set | concurrent requests can be undercounted — the limit can be exceeded. `RuntimeWarning` |
+| `FileBasedCache` | neither is atomic | same as above. `RuntimeWarning` |
+| `DummyCache` | stores nothing | **the limit is never enforced.** `RuntimeWarning` |
+
+`CacheRateLimitBackend` emits a `RuntimeWarning` when constructed on any of
+the last three, so a limit that can't hold doesn't fail silently.
 
 - **LocMemCache** (Django's default if `CACHES` isn't configured) is
   **per-process**. `add()`/`incr()` are thread-safe within one process, but

@@ -49,7 +49,6 @@ class TestReadonlyFields:
     def test_matches_spec(self, admin_instance: TenantAPIKeyAdmin) -> None:
         assert admin_instance.readonly_fields == (
             "prefix",
-            "hashed_key",
             "created_at",
             "last_used_at",
             "revoked_at",

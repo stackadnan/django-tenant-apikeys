@@ -46,6 +46,18 @@ stripping any client-supplied copy of) that header before Django ever sees
 the request. See [IP restrictions](ip-restrictions.md#trusting-a-proxy-header)
 for why this defaults to off.
 
+## `TENANT_API_KEY_TRUSTED_PROXY_COUNT`
+
+```python
+TENANT_API_KEY_TRUSTED_PROXY_COUNT = 2
+```
+
+**Optional, default `1`.** How many trusted proxies sit between the client
+and Django. `get_client_ip()` takes that many entries from the **right** of
+`TENANT_API_KEY_TRUSTED_PROXY_HEADER` (entries to the left were written by
+the client and are never used). Ignored unless the header setting is set.
+See [IP restrictions](ip-restrictions.md#trusting-a-proxy-header).
+
 ## `TENANT_API_KEY_RATE_LIMIT_CACHE`
 
 ```python

@@ -4,6 +4,8 @@ check_rate_limit()'s integration with it, and backend pluggability."""
 from __future__ import annotations
 
 import threading
+import warnings
+from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -184,3 +186,51 @@ class AllowAllBackend:
         return RateLimitResult(
             allowed=True, limit=limit, remaining=limit, reset_at=None, retry_after=None
         )
+
+
+_DUMMY = {"default": {"BACKEND": "django.core.cache.backends.dummy.DummyCache"}}
+_DATABASE = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.db.DatabaseCache",
+        "LOCATION": "ratelimit_cache_table",
+    }
+}
+
+
+class TestUnreliableCacheBackendsWarn:
+    """The limit is only as good as the cache underneath it; a backend that
+    can't enforce it must not fail *silently*."""
+
+    @override_settings(CACHES=_DUMMY)
+    def test_dummy_cache_warns_that_nothing_is_enforced(self) -> None:
+        with pytest.warns(RuntimeWarning, match="DummyCache"):
+            CacheRateLimitBackend()
+
+    @override_settings(CACHES=_DUMMY)
+    def test_dummy_cache_really_never_limits(self, tenant: Tenant) -> None:
+        # Documents the reason for the warning above.
+        key = TenantAPIKey.generate_key(name="k", tenant=tenant, rate_limit=1)[0]
+        with pytest.warns(RuntimeWarning):
+            results = [check_rate_limit(key).allowed for _ in range(5)]
+        assert results == [True] * 5
+
+    @override_settings(CACHES=_DATABASE)
+    def test_database_cache_warns_about_non_atomic_incr(self) -> None:
+        with pytest.warns(RuntimeWarning, match="DatabaseCache.*not atomic"):
+            CacheRateLimitBackend()
+
+    def test_file_based_cache_warns_about_non_atomic_incr(self, tmp_path: Path) -> None:
+        file_cache = {
+            "default": {
+                "BACKEND": "django.core.cache.backends.filebased.FileBasedCache",
+                "LOCATION": str(tmp_path),
+            }
+        }
+        with override_settings(CACHES=file_cache):
+            with pytest.warns(RuntimeWarning, match="FileBasedCache.*not atomic"):
+                CacheRateLimitBackend()
+
+    def test_locmem_cache_does_not_warn(self) -> None:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            CacheRateLimitBackend()

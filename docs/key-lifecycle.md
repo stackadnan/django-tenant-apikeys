@@ -14,10 +14,17 @@ api_key.is_active   # False
 `revoke()` sets the same `is_active` flag `TenantAPIKeyAuthentication`
 already checks on every request — there's no separate "revoked" gate that
 could fall out of sync with it. `revoked_at` and `revoked_reason` are audit
-metadata only; nothing reads them to decide whether the key still works,
-and nothing in an authentication response distinguishes "revoked" from
-"invalid" from "expired," so a caller probing with guessed keys can't learn
-anything about a key's history from how it fails.
+metadata only; nothing reads them to decide whether the key still works.
+
+`revoke()` is **idempotent**: revoking an already-revoked key leaves its
+original `revoked_at` and `revoked_reason` untouched, so a repeated call
+can't overwrite the record of why and when it was first revoked.
+
+A caller without a valid secret always gets `"Invalid API key."`, whatever
+the key's history. Once the secret verifies, the DRF backend distinguishes
+`"This API key has been deactivated."` and `"This API key has expired."`
+(useful to the key's legitimate holder); Django Ninja returns a bare 401 for
+every failure.
 
 `reactivate()` undoes it:
 
@@ -62,6 +69,13 @@ key — the only time you'll see it, same as `generate_key()`. The old row
 isn't deleted, so it stays visible for audit history; it just can't
 authenticate anymore. Both the insert and the revoke happen inside one
 `transaction.atomic()` block.
+
+The key is re-read under a `SELECT ... FOR UPDATE` lock first (a no-op on
+SQLite), and the new row's values are copied from that fresh read — so a
+stale instance, or two concurrent rotations of the same key, can't both
+succeed and leave two live replacements: the second raises `ValueError`.
+The new key keeps the original key's prefix (`acme_live_…` rotates to
+`acme_live_…`); pass `prefix=` to change it.
 
 ```python
 old_key, raw_key = OrganizationAPIKey.generate_key(name="k", tenant=org)

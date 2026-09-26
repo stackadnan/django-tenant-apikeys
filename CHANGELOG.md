@@ -11,6 +11,86 @@ versions if a `0.x` release note says so.
 
 No unreleased changes yet.
 
+## [0.4.1] - 2026-09-26
+
+Security and correctness fixes; no new features, **no migration required**.
+
+### Security
+
+- **`get_client_ip()` no longer trusts client-controlled `X-Forwarded-For`
+  entries.** With `TENANT_API_KEY_TRUSTED_PROXY_HEADER` set it previously
+  returned the *leftmost* entry, which is the one a client writes itself:
+  behind a proxy that appends to the header (nginx `$proxy_add_x_forwarded_for`,
+  AWS ALB, Cloudflare), anyone holding a key could prepend an allowed address
+  and pass `allowed_ips`. It now takes the entry
+  `TENANT_API_KEY_TRUSTED_PROXY_COUNT` (new setting, default `1`) from the
+  **right**. If the header is missing or shorter than that count it falls
+  back to `REMOTE_ADDR`.
+- `has_scope()` and `is_ip_allowed()` fail closed on malformed data. A bare
+  string in `scopes` (possible via the admin, a fixture, or a raw ORM call --
+  only `generate_key()` validated it) used to be searched as a substring:
+  `scopes="orders:read"` granted `"orders"`, `"ord"` and `":"`. It now grants
+  nothing. A non-list `allowed_ips` denies every IP instead of iterating its
+  characters.
+- `rotate()` re-reads the key under `SELECT ... FOR UPDATE` and re-checks its
+  validity inside the transaction. Two concurrent rotations, or rotating a
+  stale instance, could previously both succeed and leave two live
+  replacement keys; the second now raises `ValueError`. (Row locks are a
+  no-op on SQLite.)
+- The Django admin no longer shows `hashed_key`.
+
+### Fixed
+
+- `rotate()` kept a custom key prefix only if you passed `prefix=` again; it
+  otherwise reset it to `"tak"`, including from `tenant_api_key_rotate`. The
+  original prefix is now preserved.
+- The admin ignored the chosen `environment` when minting a key (an
+  `environment="test"` key got a `tak_live_` prefix), and bypassed
+  `generate_key()`'s validation. `AbstractTenantAPIKey.clean()` now applies
+  the same `scopes`/`allowed_ips`/`rate_limit` rules to the admin, model
+  forms and `full_clean()`.
+- The admin `is_active` checkbox now keeps `revoked_at`/`revoked_reason` in
+  step, instead of leaving a key active-but-"revoked" or revoked-but-undated.
+- `revoke()` is idempotent: a repeated call no longer overwrites the first
+  revocation's `revoked_at`/`revoked_reason`.
+- `is_ip_allowed()` matches IPv4-mapped IPv6 clients (`::ffff:203.0.113.5`)
+  against IPv4 entries.
+- `is_expired` and `get_usable_keys()` agree at the exact expiry instant.
+- `CacheRateLimitBackend` emits a `RuntimeWarning` on a `DummyCache` (the
+  limit is never enforced), `DatabaseCache` or `FileBasedCache` (`incr()`
+  isn't atomic, so the limit can be exceeded).
+
+### Documentation
+
+- Corrected claims the code didn't support: `X-Forwarded-For` semantics,
+  that `add()`/`incr()` are "atomic on any real cache backend" (only Redis,
+  Memcached and LocMemCache), and that no response distinguishes a
+  deactivated or expired key (the DRF backend does, once the secret has
+  verified).
+
+### Packaging and CI
+
+- `publish.yml` now runs the full test suite first and checks that the
+  release tag matches `__version__`; previously a red build could still
+  publish.
+- CI adds Django 6.1 and drops the Django 4.2 x Python 3.13/3.14 and
+  Django 6.1 x Python 3.10/3.11 combinations those versions don't support.
+- The `Changelog` project URL points at `CHANGELOG.md`, which is now in the
+  sdist; the coverage exclusion for `...` only matches bare `...` lines.
+
+### Compatibility
+
+Backward compatible except for two deliberate behaviour changes:
+
+- **Behind more than one trusted proxy** with
+  `TENANT_API_KEY_TRUSTED_PROXY_HEADER` set, set
+  `TENANT_API_KEY_TRUSTED_PROXY_COUNT` to the number of proxy hops. Without
+  it, `get_client_ip()` returns the rightmost entry (your last proxy) and
+  `allowed_ips` will reject legitimate clients -- previously the spoofable
+  leftmost entry was used. One proxy, or a proxy that overwrites the header,
+  needs no change.
+- Repeated `revoke()` calls no longer replace the stored reason/timestamp.
+
 ## [0.4.0] - 2026-09-06
 
 ### Added
@@ -181,7 +261,8 @@ Initial release.
 - Documented recipe for Django Ninja integration (no dedicated module
   shipped — see the README).
 
-[Unreleased]: https://github.com/stackadnan/django-tenant-apikeys/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/stackadnan/django-tenant-apikeys/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/stackadnan/django-tenant-apikeys/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/stackadnan/django-tenant-apikeys/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/stackadnan/django-tenant-apikeys/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/stackadnan/django-tenant-apikeys/compare/v0.1.0...v0.2.0

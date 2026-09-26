@@ -54,19 +54,28 @@ An unrecognized prefix and a recognized prefix with a wrong/tampered secret
 produce the **exact same rejection** (`"Invalid API key."`, a 401).
 Distinguishing "this prefix doesn't exist" from "this prefix exists but the
 secret is wrong" in the response would let an attacker enumerate which
-prefixes are real.
+prefixes are real. (The two paths aren't timing-identical -- a miss skips the
+hash -- but the prefix isn't a secret, so that only reveals whether a
+public identifier exists.)
 
 ## Lifecycle: revocation, expiration, rotation
 
 `revoke()` sets the same `is_active` flag authentication already checks —
 there's no second enforcement path that could fall out of sync with it, and
-`revoked_at`/`revoked_reason` are audit metadata only; nothing about an
-authentication response distinguishes "revoked" from "invalid" from
-"expired," so a caller probing with guessed keys can't learn anything about
-a key's history from how it fails. `rotate()` refuses to run on an
-already-inactive or expired key, and wraps issuing the replacement +
-revoking the original in one `transaction.atomic()` block, so a rotation
-can't half-complete. Full detail: [Key lifecycle](key-lifecycle.md).
+`revoked_at`/`revoked_reason` are audit metadata only. A caller who doesn't
+hold a valid secret always gets the same `"Invalid API key."` and learns
+nothing about a key's history. Once the secret *has* verified, the DRF
+backend does say `"This API key has been deactivated."` or `"has expired."`
+(Django Ninja just returns 401) -- the holder of a valid key isn't the
+threat model, and the message saves them a support ticket.
+`revoke()` is idempotent, so a repeat can't overwrite the first revocation's
+timestamp and reason. `rotate()` refuses to run on an already-inactive or
+expired key, re-reads the row under a `SELECT ... FOR UPDATE` lock, and
+wraps issuing the replacement + revoking the original in one
+`transaction.atomic()` block -- so a rotation can't half-complete, and two
+concurrent (or stale-instance) rotations can't both succeed. (Row locks are
+a no-op on SQLite; there, only the re-read applies.) Full detail:
+[Key lifecycle](key-lifecycle.md).
 
 ## IP restrictions: don't trust a spoofable header by default
 
@@ -79,7 +88,8 @@ actual trusted reverse proxy stripping client-supplied copies of that
 header first would let any caller claim their own "IP" and walk straight
 through an `allowed_ips` restriction. See
 [IP restrictions](ip-restrictions.md#trusting-a-proxy-header) for the exact
-mechanics and its single-hop limitation.
+mechanics, including `TENANT_API_KEY_TRUSTED_PROXY_COUNT` for more than
+one trusted proxy.
 
 ## Rate limiting is not brute-force protection
 
@@ -134,10 +144,14 @@ Stated plainly, matching
   client-side, or transmits them elsewhere in the stack (e.g. accidentally
   logging the `Authorization` header in middleware you wrote).
 - Automatic queryset filtering by tenant — see "Tenant isolation" above.
-- A multi-hop trusted-proxy chain for IP resolution — see
+- Verifying your proxy topology. The client IP is the
+  `TENANT_API_KEY_TRUSTED_PROXY_COUNT`-th entry from the right of the
+  trusted header; that's only right if that many trusted proxies really sit
+  in front of Django — see
   [IP restrictions](ip-restrictions.md#trusting-a-proxy-header).
-- Cross-process rate-limit consistency with the default cache backend — see
-  [Rate limiting](rate-limiting.md#how-the-default-backend-counts-requests).
+- Rate-limit accuracy beyond what your cache provides (per-process on
+  LocMemCache, lossy on DatabaseCache/FileBasedCache, absent on DummyCache)
+  — see [Rate limiting](rate-limiting.md#how-the-default-backend-counts-requests).
 
 ## Reporting a vulnerability
 

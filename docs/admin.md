@@ -30,7 +30,7 @@ def save_model(self, request, obj, form, change):
         super().save_model(request, obj, form, change)
         return
 
-    full_key, key_prefix, hashed_key = generate_api_key()
+    full_key, key_prefix, hashed_key = generate_api_key(environment=obj.environment)
     obj.prefix = key_prefix
     obj.hashed_key = hashed_key
     super().save_model(request, obj, form, change)
@@ -43,8 +43,11 @@ existing key never regenerates it.** Without that check, renaming a key or
 flipping `is_active` in the admin would silently mint a new secret and
 invalidate whatever the client already has.
 
-On create, `generate_api_key()` runs server-side, ignoring whatever the
-submitted form contained. The raw key is shown exactly once, in a
+On create, `generate_api_key()` runs server-side, ignoring any submitted
+`prefix`/`hashed_key`; the chosen `environment` is passed through so the
+`_live_`/`_test_` prefix segment matches the column. The form's
+`scopes`, `allowed_ips` and `rate_limit` go through the model's `clean()`,
+the same rules `generate_key()` enforces. The raw key is shown exactly once, in a
 dismissible warning message right after you save — `message_user()` with
 Django's messages framework, not a custom template, so it survives the
 redirect after save and gets styled by whatever admin theme you're running.
@@ -67,11 +70,18 @@ The list view never renders anything derived from `hashed_key` — `prefix`
 plus a fixed run of bullet characters, which is enough to recognize *which*
 key a row is without exposing anything secret.
 
-`readonly_fields` covers `prefix`, `hashed_key`, `created_at`,
-`last_used_at`, `revoked_at`, and `revoked_reason` — on the individual
-change form, these render as plain text, not inputs. There's no form field
-an admin user could tamper with to make the row accept an attacker-chosen
-hash, or backdate `created_at`, or forge `revoked_at`.
+`readonly_fields` covers `prefix`, `created_at`, `last_used_at`,
+`revoked_at`, and `revoked_reason` — on the individual change form, these
+render as plain text, not inputs. `hashed_key` is `editable=False` and
+deliberately not shown at all. There's no form field an admin user could
+tamper with to make the row accept an attacker-chosen hash, or backdate
+`created_at`, or forge `revoked_at`.
+
+The `is_active` checkbox is the one other way to revoke or reactivate a key
+from the admin. Saving with it changed keeps `revoked_at`/`revoked_reason`
+in step: unchecking records a revocation (`"deactivated via admin"` if none
+was recorded), re-checking clears it — so a key can't end up
+active-but-"revoked" or revoked-but-undated.
 
 ## The status column
 

@@ -105,8 +105,9 @@ than the reference docs on those specific topics.
 ## Supported versions
 
 - Python 3.10, 3.11, 3.12, 3.13, 3.14
-- Django 4.2 and 5.2 (tested in CI; other 4.x/5.x releases are likely to
-  work but aren't part of the test matrix)
+- Django 4.2, 5.2 and 6.1, on the Python versions each supports (tested in
+  CI; other 4.x/5.x/6.x releases are likely to work but aren't part of the
+  test matrix)
 - Django REST Framework ≥ 3.14 and/or django-ninja ≥ 1.0, both optional
 
 ## Development

@@ -85,10 +85,13 @@ intentional; the setting is opt-in. If it's set but the header isn't
 present on the request, `get_client_ip()` falls back to `REMOTE_ADDR`
 rather than erroring.
 
-If it *is* set and IP restrictions seem bypassable, check whether your
-proxy actually strips any client-supplied copy of that header before
-adding its own. If it doesn't, a client can set
-`X-Forwarded-For: <whatever>` themselves and have it trusted. See
+If every legitimate client is suddenly rejected by `allowed_ips` after
+setting it, you probably have more than one trusted proxy: `get_client_ip()`
+takes the rightmost entry by default, which is then a proxy's address, not
+the client's. Set `TENANT_API_KEY_TRUSTED_PROXY_COUNT` to the number of
+proxy hops. Client-supplied entries on the left of the header are never
+used, so a client can't claim an allowed IP by sending its own
+`X-Forwarded-For`. See
 [IP restrictions: trusting a proxy header](ip-restrictions.md#trusting-a-proxy-header).
 
 ## `makemigrations` wants to create a migration after upgrading
