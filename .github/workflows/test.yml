@@ -100,6 +100,42 @@ jobs:
           POSTGRES_HOST: localhost
         run: python -m pytest --ds=tests.settings_postgres
 
+  test-redis:
+    name: Redis
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # redis-py is installed here only, not as a project or [test]
+          # extra dependency -- the package itself never requires it.
+          python -m pip install "Django~=5.2.0" -e ".[drf,test]" "redis>=5"
+
+      - name: Run tests against Redis
+        env:
+          REDIS_URL: redis://localhost:6379/1
+        run: python -m pytest tests/test_ratelimit_redis.py -v
+
   lint:
     name: Lint (ruff + mypy)
     runs-on: ubuntu-latest
