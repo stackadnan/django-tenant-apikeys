@@ -11,6 +11,45 @@ versions if a `0.x` release note says so.
 
 No unreleased changes yet.
 
+## [0.6.0] - 2026-10-11
+
+Production hardening: a rate-limit cache outage no longer takes your API
+down with it, and being rate limited is now as observable as being
+rejected outright. No breaking changes and no migration.
+
+### Added
+
+- A new `api_key_rate_limited` signal (in `django_tenant_apikeys.signals`),
+  sent with `api_key` and the denying `RateLimitResult` whenever a key's
+  `rate_limit` is exceeded, from both the DRF and Ninja throttles. Every
+  rate-limited request is also logged as a `WARNING`. Neither fires for a
+  request within the limit, or for a key with no `rate_limit` set.
+
+### Fixed
+
+- `CacheRateLimitBackend` no longer lets an unreachable cache (a dropped
+  Redis connection, a timeout) turn into an unhandled exception on every
+  rate-limited request. It now fails open -- the request is allowed through
+  and a `WARNING` is logged -- since a cache hiccup taking down every
+  rate-limited endpoint is a worse outcome than temporarily not enforcing a
+  usage cap. See [Rate limiting: when the cache is unreachable](https://stackadnan.github.io/django-tenant-apikeys/rate-limiting/#when-the-cache-is-unreachable).
+  This path is now tested against a real Redis server in CI.
+- Docs and SECURITY.md said a `DummyCache` rate-limit cache gets a warning;
+  it's actually refused outright (`ImproperlyConfigured`, since 0.5.0).
+  Corrected.
+
+### Documentation
+
+- A new, fully worked example proving the tenant-isolation boundary this
+  package actually provides -- and the one it explicitly doesn't -- in
+  [`tests/test_tenant_isolation.py`](https://github.com/stackadnan/django-tenant-apikeys/blob/main/tests/test_tenant_isolation.py),
+  referenced from the Multi-tenancy and Security docs.
+- Clarified that there's no separate "key expired" event: it's the same
+  `api_key_rejected` signal, with `reason="expired"`, detected the same way
+  any other rejection is -- at authentication, not by a background scan.
+- A concrete `CACHES` example for Django's built-in Redis backend in
+  [Rate limiting](https://stackadnan.github.io/django-tenant-apikeys/rate-limiting/).
+
 ## [0.5.0] - 2026-09-26
 
 Django REST Framework and Django Ninja now share one authentication path,
@@ -322,7 +361,8 @@ Initial release.
 - Documented recipe for Django Ninja integration (no dedicated module
   shipped — see the README).
 
-[Unreleased]: https://github.com/stackadnan/django-tenant-apikeys/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/stackadnan/django-tenant-apikeys/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/stackadnan/django-tenant-apikeys/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/stackadnan/django-tenant-apikeys/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/stackadnan/django-tenant-apikeys/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/stackadnan/django-tenant-apikeys/compare/v0.3.0...v0.4.0

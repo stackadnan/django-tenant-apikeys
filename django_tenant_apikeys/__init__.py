@@ -7,6 +7,6 @@ the app registry is ready. Pull from the actual submodule instead, e.g.
 
 from __future__ import annotations
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 __all__ = ["__version__"]
