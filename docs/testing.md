@@ -31,6 +31,26 @@ you're contributing a change that adds a branch, it needs a test that
 exercises it — no line is excluded without a `# pragma: no cover` and a
 reason in a comment.
 
+### Running the Redis-backed rate-limit tests
+
+`tests/test_ratelimit_redis.py` exercises `CacheRateLimitBackend` against
+Django's built-in `RedisCache`, to prove the cross-process claim the rate
+limiting docs make — something `LocMemCache` structurally can't do. It
+needs the `redis` Python package and a reachable Redis server, neither of
+which is a dependency of the package or required for the rest of the suite;
+without them this file is **skipped**, not failed:
+
+```bash
+pip install redis
+docker run --rm -p 6379:6379 redis:7     # or any Redis you already have
+REDIS_URL=redis://localhost:6379/1 pytest tests/test_ratelimit_redis.py -v
+```
+
+CI runs this in its own job (`test-redis` in
+[`.github/workflows/test.yml`](https://github.com/stackadnan/django-tenant-apikeys/blob/main/.github/workflows/test.yml)),
+against a `redis:7` service container, so this path is verified without
+making Redis a dependency anyone installing the package ever sees.
+
 ## Testing your own authentication/permission setup
 
 An authentication backend is a security boundary, not just a feature — a
