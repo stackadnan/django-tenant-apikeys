@@ -17,7 +17,10 @@ concrete key model as ``sender``:
     value), ``api_key`` (the matched key, or ``None`` if none matched),
     ``client_ip`` -- sent by ``authenticate_key()`` for every rejected
     request, by both the DRF and Django Ninja backends. This fires for
-    unauthenticated traffic, so keep receivers cheap.
+    unauthenticated traffic, so keep receivers cheap. There's no separate
+    "key expired" signal: an expired key is rejected like any other, with
+    ``reason="expired"`` -- it's the same event, detected at the same place
+    (authentication), not a background job scanning for expiry.
 ``api_key_rate_limited``
     ``api_key``, ``result`` (the
     :class:`~django_tenant_apikeys.ratelimit.RateLimitResult` that denied the

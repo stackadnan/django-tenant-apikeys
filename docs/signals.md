@@ -16,10 +16,11 @@ All four are plain `django.dispatch.Signal`s in
 | `api_key_revoked` | `revoke()`, once per actual revocation | `api_key`, `reason` |
 | `api_key_rotated` | `rotate()`, after its transaction | `old_key`, `new_key`, `grace_period` (`None` = immediate) |
 | `api_key_rejected` | authentication refuses a key, in DRF *and* Ninja | `reason`, `api_key` (or `None`), `client_ip` |
+| `api_key_rate_limited` | a key's `rate_limit` is exceeded, in DRF *and* Ninja | `api_key`, `result` (a `RateLimitResult`) |
 
 ```python
 from django.dispatch import receiver
-from django_tenant_apikeys.signals import api_key_rejected, api_key_revoked
+from django_tenant_apikeys.signals import api_key_rate_limited, api_key_rejected, api_key_revoked
 
 
 @receiver(api_key_revoked)
@@ -30,12 +31,33 @@ def audit_revocation(sender, api_key, reason, **kwargs):
 @receiver(api_key_rejected)
 def count_rejections(sender, reason, api_key, client_ip, **kwargs):
     metrics.incr("api_key.rejected", tags={"reason": reason})
+
+
+@receiver(api_key_rate_limited)
+def count_throttled(sender, api_key, result, **kwargs):
+    metrics.incr("api_key.rate_limited", tags={"key_prefix": api_key.prefix})
 ```
 
 `reason` is a `RejectionReason` value: `malformed`, `unknown_key`,
 `bad_secret`, `inactive`, `expired`, `environment`, `ip_not_allowed`,
 `tenant_not_allowed`. It is precise here even though the *client* is never
 told which of the first three it was.
+
+There's no separate "key expired" event. An expired key is rejected the
+same way any other invalid key is — `api_key_rejected` with
+`reason="expired"` — because that's the only place expiry is actually
+*detected*: at the moment a key is presented for authentication, not by a
+background job scanning for keys whose `expires_at` has passed. If you need
+to know about expiry before anyone presents the key again, query
+`expires_at` yourself (e.g. a periodic `manage.py` command over
+`YourKeyModel.objects.filter(expires_at__lt=timezone.now(), is_active=True)`);
+that's an application-specific report, not something this library runs for
+you.
+
+`api_key_rate_limited` is sent once per request that's actually denied —
+never for a request within the limit, and never for a key with no
+`rate_limit` set, so it can't turn a hot endpoint into a signal-dispatch
+cost on every call.
 
 Things to know:
 
@@ -65,3 +87,14 @@ API key rejected: reason=ip_not_allowed prefix=tak_live_3f9a2c1d client_ip='198.
   match a row.
 - `client_ip` is repr-escaped and truncated, so a hostile header value can't
   forge log lines.
+
+A key being rate limited is also one `WARNING`:
+
+```
+API key rate limited: prefix=tak_live_3f9a2c1d limit=100/minute retry_after=37
+```
+
+And, separately, the rate-limit cache itself being unreachable (a dropped
+Redis connection, a timeout) is its own `WARNING` — not a rejection or a
+rate-limit event, since no limit was actually checked. See
+[Rate limiting: when the cache is unreachable](rate-limiting.md#when-the-cache-is-unreachable).

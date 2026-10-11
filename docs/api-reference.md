@@ -119,8 +119,8 @@ framework backends are thin adapters over it.
 
 ## `django_tenant_apikeys.signals`
 
-`api_key_created`, `api_key_revoked`, `api_key_rotated`, `api_key_rejected`.
-See [Signals and logging](signals.md).
+`api_key_created`, `api_key_revoked`, `api_key_rotated`, `api_key_rejected`,
+`api_key_rate_limited`. See [Signals and logging](signals.md).
 
 ## `django_tenant_apikeys.ratelimit`
 
