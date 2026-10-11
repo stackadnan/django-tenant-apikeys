@@ -18,6 +18,12 @@ concrete key model as ``sender``:
     ``client_ip`` -- sent by ``authenticate_key()`` for every rejected
     request, by both the DRF and Django Ninja backends. This fires for
     unauthenticated traffic, so keep receivers cheap.
+``api_key_rate_limited``
+    ``api_key``, ``result`` (the
+    :class:`~django_tenant_apikeys.ratelimit.RateLimitResult` that denied the
+    request) -- sent by ``check_rate_limit()`` when a key's ``rate_limit``
+    is exceeded, from both the DRF and Ninja throttles. Not sent for a
+    request within the limit, or for a key with no ``rate_limit`` set.
 
 They're sent synchronously. If you call ``generate_key()``, ``revoke()`` or
 ``rotate()`` inside an ``atomic()`` block that later rolls back, a receiver
@@ -36,6 +42,7 @@ from django.dispatch import Signal
 
 __all__ = [
     "api_key_created",
+    "api_key_rate_limited",
     "api_key_rejected",
     "api_key_revoked",
     "api_key_rotated",
@@ -47,6 +54,7 @@ api_key_created = Signal()
 api_key_revoked = Signal()
 api_key_rotated = Signal()
 api_key_rejected = Signal()
+api_key_rate_limited = Signal()
 
 
 def send_safely(signal: Signal, sender: type, **kwargs: Any) -> None:

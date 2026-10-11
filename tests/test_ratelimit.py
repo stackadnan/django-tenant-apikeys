@@ -19,6 +19,7 @@ from django_tenant_apikeys.ratelimit import (
     check_rate_limit,
     get_rate_limit_backend,
 )
+from django_tenant_apikeys.signals import api_key_rate_limited
 from tests.models import Tenant, TenantAPIKey
 
 pytestmark = pytest.mark.django_db
@@ -297,3 +298,51 @@ class TestCacheFailsOpen:
             result = backend.hit("ratelimit:test", limit=5, window_seconds=60)
         assert result.allowed is True
         assert result.remaining == 4  # counted as the first request, not dropped
+
+
+class TestRateLimitedSignal:
+    def test_fires_when_the_limit_is_exceeded(self, tenant: Tenant) -> None:
+        key = TenantAPIKey.generate_key(name="k", tenant=tenant, rate_limit=1)[0]
+        received: list[dict] = []
+        receiver = lambda sender, **kw: received.append(kw)  # noqa: E731
+        api_key_rate_limited.connect(receiver, weak=False)
+        try:
+            check_rate_limit(key)  # allowed
+            check_rate_limit(key)  # exceeded
+        finally:
+            api_key_rate_limited.disconnect(receiver)
+        assert len(received) == 1
+        assert received[0]["api_key"].pk == key.pk
+        assert received[0]["result"].allowed is False
+
+    def test_does_not_fire_within_the_limit(self, tenant: Tenant) -> None:
+        key = TenantAPIKey.generate_key(name="k", tenant=tenant, rate_limit=5)[0]
+        received: list[dict] = []
+        receiver = lambda sender, **kw: received.append(kw)  # noqa: E731
+        api_key_rate_limited.connect(receiver, weak=False)
+        try:
+            check_rate_limit(key)
+        finally:
+            api_key_rate_limited.disconnect(receiver)
+        assert received == []
+
+    def test_does_not_fire_for_a_key_without_a_rate_limit(self, tenant: Tenant) -> None:
+        key = TenantAPIKey.generate_key(name="k", tenant=tenant)[0]
+        received: list[dict] = []
+        receiver = lambda sender, **kw: received.append(kw)  # noqa: E731
+        api_key_rate_limited.connect(receiver, weak=False)
+        try:
+            check_rate_limit(key)
+        finally:
+            api_key_rate_limited.disconnect(receiver)
+        assert received == []
+
+    def test_logs_a_warning(self, tenant: Tenant, caplog: pytest.LogCaptureFixture) -> None:
+        import logging
+
+        key = TenantAPIKey.generate_key(name="k", tenant=tenant, rate_limit=1)[0]
+        check_rate_limit(key)
+        with caplog.at_level(logging.WARNING, logger="django_tenant_apikeys"):
+            check_rate_limit(key)
+        assert f"prefix={key.prefix}" in caplog.text
+        assert "rate limited" in caplog.text

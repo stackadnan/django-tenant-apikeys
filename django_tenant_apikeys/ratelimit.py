@@ -26,6 +26,8 @@ from django.core.cache.backends.filebased import FileBasedCache
 from django.core.exceptions import ImproperlyConfigured
 from django.utils.module_loading import import_string
 
+from .signals import api_key_rate_limited, send_safely
+
 if TYPE_CHECKING:
     from .models import AbstractTenantAPIKey
 
@@ -213,6 +215,13 @@ def check_rate_limit(api_key: AbstractTenantAPIKey) -> RateLimitResult:
     subclasses (e.g. two tenant types in the same project) could otherwise
     collide on the same primary key value and share a counter that belongs
     to a different tenant's key entirely.
+
+    When the limit is exceeded, this logs a ``WARNING`` and sends the
+    ``api_key_rate_limited`` signal (``api_key``, ``result``) -- the same
+    pattern ``authenticate_key()`` uses for rejections, so a key being
+    throttled is as observable as a key being refused outright. Neither
+    fires for a request within the limit (that's the hot path) or for a key
+    with no ``rate_limit`` configured.
     """
     if api_key.rate_limit is None:
         return RateLimitResult(
@@ -221,4 +230,16 @@ def check_rate_limit(api_key: AbstractTenantAPIKey) -> RateLimitResult:
     window_seconds = _WINDOW_SECONDS[api_key.rate_limit_window]
     cache_key = f"tenant_api_key_ratelimit:{type(api_key).__name__}:{api_key.pk}"
     backend = get_rate_limit_backend()
-    return backend.hit(cache_key, api_key.rate_limit, window_seconds)
+    result = backend.hit(cache_key, api_key.rate_limit, window_seconds)
+
+    if not result.allowed:
+        logger.warning(
+            "API key rate limited: prefix=%s limit=%s/%s retry_after=%s",
+            api_key.prefix,
+            api_key.rate_limit,
+            api_key.rate_limit_window,
+            result.retry_after,
+        )
+        send_safely(api_key_rate_limited, type(api_key), api_key=api_key, result=result)
+
+    return result
