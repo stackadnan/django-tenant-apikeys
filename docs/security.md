@@ -127,7 +127,9 @@ Rate-limit state also can't leak between keys or tenants — see
 its default backend's consistency is bounded by whichever Django cache
 backend it's pointed at; see
 [Rate limiting: how the default backend counts requests](rate-limiting.md#how-the-default-backend-counts-requests)
-for the concurrency and multi-process detail.
+for the concurrency and multi-process detail, and
+[Rate limiting: when the cache is unreachable](rate-limiting.md#when-the-cache-is-unreachable)
+for the deliberate fail-open when the cache itself can't be reached.
 
 ## Tenant isolation
 
@@ -136,7 +138,10 @@ there's no code path where authenticating with tenant A's key attaches
 tenant B's `request.tenant`. What this package does *not* do: filter your
 other querysets for you. `request.tenant` being set correctly is the
 guarantee; applying it to every other query in your view is still your
-application's responsibility. See
+application's responsibility — see
+[`tests/test_tenant_isolation.py`](https://github.com/stackadnan/django-tenant-apikeys/blob/main/tests/test_tenant_isolation.py)
+for the pattern (`get_object_or_404(Model, pk=pk, tenant=request.tenant)`)
+and a worked example of what happens when a view forgets it. See also
 [Multi-tenancy: what isolation the package gives you, and what it doesn't](multi-tenancy.md#what-isolation-the-package-gives-you-and-what-it-doesnt).
 
 ## Transport and handling — outside this package's control, but worth stating
@@ -169,8 +174,12 @@ Stated plainly, matching
   in front of Django — see
   [IP restrictions](ip-restrictions.md#trusting-a-proxy-header).
 - Rate-limit accuracy beyond what your cache provides (per-process on
-  LocMemCache, lossy on DatabaseCache/FileBasedCache, absent on DummyCache)
-  — see [Rate limiting](rate-limiting.md#how-the-default-backend-counts-requests).
+  LocMemCache, lossy on DatabaseCache/FileBasedCache; a DummyCache is
+  refused outright rather than silently enforcing nothing) — see
+  [Rate limiting](rate-limiting.md#how-the-default-backend-counts-requests).
+  If the cache is unreachable at request time, the limit fails open
+  (request allowed, a `WARNING` logged) rather than failing the request —
+  see [Rate limiting: when the cache is unreachable](rate-limiting.md#when-the-cache-is-unreachable).
 
 ## Reporting a vulnerability
 

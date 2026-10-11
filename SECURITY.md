@@ -36,9 +36,16 @@ Out of scope:
   The default backend is exact only on a cache whose `add()`/`incr()` are
   atomic and shared across workers (Memcached, a shared Redis).
   LocMemCache is per-process; DatabaseCache and FileBasedCache can lose
-  increments under concurrency; DummyCache enforces nothing (the library
-  emits a `RuntimeWarning` for all three). Choosing the cache is a
-  deployment decision this library can't make for you.
+  increments under concurrency (`RuntimeWarning` for both); a `DummyCache`,
+  which enforces nothing at all, is refused outright
+  (`ImproperlyConfigured`) rather than silently never limiting anything.
+  Choosing the cache is a deployment decision this library can't make for
+  you.
+- A rate-limit cache that's unreachable at request time (a dropped
+  connection, a timeout). This is a deliberate fail-open: the request is
+  allowed through and a `WARNING` is logged rather than the cache outage
+  becoming an outage of every rate-limited endpoint. See
+  [Rate limiting: when the cache is unreachable](https://stackadnan.github.io/django-tenant-apikeys/rate-limiting/#when-the-cache-is-unreachable).
 - Verifying that the proxy setup behind `TENANT_API_KEY_TRUSTED_PROXY_HEADER`
   is what you think it is. With the setting on, the client IP is the
   `TENANT_API_KEY_TRUSTED_PROXY_COUNT`-th entry from the right of that
