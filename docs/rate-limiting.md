@@ -115,11 +115,28 @@ the last three, so a limit that can't hold doesn't fail silently.
   workers each enforce the limit independently rather than sharing one
   count. Fine for local development or a genuinely single-process
   deployment; not a real limit across workers.
-- **Memcached, or a shared Redis** (via `django-redis` or similar), makes
-  the exact same code correct across processes, because both backends
-  implement `add`/`incr` atomically on the server, not just in Django's
-  process. No package changes needed — point `CACHES["default"]` (or
-  whatever `TENANT_API_KEY_RATE_LIMIT_CACHE` names) at one of them.
+- **Memcached, or a shared Redis**, makes the exact same code correct across
+  processes, because both backends implement `add`/`incr` atomically on the
+  server, not just in Django's process. No package changes needed — point
+  `CACHES["default"]` (or whatever `TENANT_API_KEY_RATE_LIMIT_CACHE` names)
+  at one of them:
+
+  ```python
+  # settings.py -- Django's own built-in Redis cache backend (no
+  # third-party cache library needed; it uses the `redis` package directly)
+  CACHES = {
+      "default": {
+          "BACKEND": "django.core.cache.backends.redis.RedisCache",
+          "LOCATION": "redis://127.0.0.1:6379/1",
+      }
+  }
+  ```
+
+  Redis isn't a dependency of this package, or required for any of its
+  other functionality — it's only relevant if you point your own cache
+  configuration at it. CI tests the Redis path in
+  [`tests/test_ratelimit_redis.py`](https://github.com/stackadnan/django-tenant-apikeys/blob/main/tests/test_ratelimit_redis.py),
+  skipped automatically (not failed) if no Redis is reachable.
 
 ### Fixed window, not sliding
 
@@ -130,6 +147,28 @@ sliding window would avoid that, at the cost of storing a timestamp per
 request instead of a single counter — real complexity this default doesn't
 carry. If that trade-off doesn't work for your use case, see the custom
 backend section below.
+
+## When the cache is unreachable
+
+A connection error or timeout talking to the cache (the server is down, a
+network blip, ...) is not the same thing as a request exceeding its limit —
+no count could even be read. `CacheRateLimitBackend.hit()` treats this as a
+third outcome, distinct from both "allowed" and "limited": it logs one
+`WARNING` and returns an unlimited result, so the request goes through
+unmetered rather than the view raising an unhandled exception.
+
+This is a deliberate, **fixed** policy — fail open, not configurable —
+because the alternative (failing closed) would turn a transient cache
+outage into an outage of every rate-limited endpoint in your project, for
+every caller, which is a worse trade-off than temporarily not enforcing a
+usage cap. `rate_limit` is a usage control, not the security boundary
+authentication itself provides — see
+[Security: rate limiting is not brute-force protection](security.md#rate-limiting-is-not-brute-force-protection).
+
+If your deployment genuinely needs the opposite trade-off (fail closed when
+the cache is down), that's a custom backend: implement `RateLimitBackend`
+yourself and let the exception from your own cache calls propagate instead
+of catching it.
 
 ## Tenant isolation
 
@@ -191,3 +230,5 @@ to change to use it.
 - [Security](security.md) — what rate limiting does and doesn't protect
   against (it isn't brute-force protection on the authentication step
   itself).
+- [Signals and logging](signals.md) — the `api_key_rate_limited` signal
+  sent when a request is denied.
