@@ -90,6 +90,30 @@ What it does *not* do:
   applying it to `Order.objects.filter(tenant=request.tenant)` in your own
   views is still your job. There's no automatic tenant-scoping middleware or
   manager here — that would mean the package guessing at your schema.
+
+  Concretely, a protected view should look up a resource like this:
+
+  ```python
+  from django.shortcuts import get_object_or_404
+
+  def get(self, request, pk):
+      order = get_object_or_404(Order, pk=pk, tenant=request.tenant)
+      ...
+  ```
+
+  not like this:
+
+  ```python
+  def get(self, request, pk):
+      order = get_object_or_404(Order, pk=pk)  # any tenant's valid key can read any pk
+      ...
+  ```
+
+  [`tests/test_tenant_isolation.py`](https://github.com/stackadnan/django-tenant-apikeys/blob/main/tests/test_tenant_isolation.py)
+  runs both shapes against the same two tenants: the first returns 404 for
+  another tenant's resource, the second leaks it. That's the entire
+  difference, and it's why the filter belongs in every protected view, not
+  something this package can insert for you.
 - **It doesn't stop two tenants from having a key with the same name, the
   same scopes, or the same rate limit.** Nothing about those attributes is
   tenant-specific by design — a `"name"` field is just a label, and two
