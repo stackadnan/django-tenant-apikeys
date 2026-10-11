@@ -11,6 +11,7 @@ enforceable limit.
 
 from __future__ import annotations
 
+import logging
 import time
 import warnings
 from dataclasses import dataclass
@@ -35,6 +36,8 @@ __all__ = [
     "check_rate_limit",
     "get_rate_limit_backend",
 ]
+
+logger = logging.getLogger("django_tenant_apikeys")
 
 _WINDOW_SECONDS = {
     "second": 1,
@@ -108,6 +111,16 @@ class CacheRateLimitBackend:
     is deliberate: a sliding window needs to store a timestamp per request
     rather than a single counter, which is real complexity this default
     doesn't need to carry.
+
+    **If the cache itself is unreachable** (a dropped Redis connection, a
+    timeout, ...), ``hit()`` fails *open*: it logs a ``WARNING`` and returns
+    an unlimited result rather than raising. Rate limiting is a usage
+    control, not the security boundary (see SECURITY.md) -- failing closed
+    here would turn a transient cache outage into an outage of every
+    rate-limited endpoint, which is a worse outcome for most deployments
+    than letting requests through unmetered until the cache recovers. This
+    is deliberately not configurable; if your deployment needs the opposite
+    trade-off, swap in a custom ``RateLimitBackend`` that re-raises.
     """
 
     def __init__(self, cache: BaseCache | None = None) -> None:
@@ -140,15 +153,31 @@ class CacheRateLimitBackend:
         reset_at = window_start + window_seconds
         cache_key = f"{key}:{window_start}"
 
-        self.cache.add(cache_key, 0, timeout=window_seconds)
         try:
-            count = self.cache.incr(cache_key)
-        except ValueError:
-            # The key expired between add() and incr() -- the window rolled
-            # over at exactly the wrong moment. Treat this request as the
-            # first one in the new window rather than failing it outright.
-            self.cache.add(cache_key, 1, timeout=window_seconds)
-            count = 1
+            self.cache.add(cache_key, 0, timeout=window_seconds)
+            try:
+                count = self.cache.incr(cache_key)
+            except ValueError:
+                # The key expired between add() and incr() -- the window
+                # rolled over at exactly the wrong moment. Treat this request
+                # as the first one in the new window rather than failing it
+                # outright.
+                self.cache.add(cache_key, 1, timeout=window_seconds)
+                count = 1
+        except Exception:
+            # Anything else -- a connection error, a timeout, a backend-
+            # specific failure -- means the cache can't answer at all, not
+            # that the limit was hit. See the class docstring for why this
+            # fails open rather than closed.
+            logger.warning(
+                "Rate-limit cache (%s) is unavailable; allowing the request "
+                "without enforcing rate_limit until it recovers.",
+                type(self.cache).__name__,
+                exc_info=True,
+            )
+            return RateLimitResult(
+                allowed=True, limit=None, remaining=None, reset_at=None, retry_after=None
+            )
 
         allowed = count <= limit
         remaining = max(limit - count, 0)

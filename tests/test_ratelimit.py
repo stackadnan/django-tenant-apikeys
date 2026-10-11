@@ -243,3 +243,57 @@ class TestUnreliableCacheBackends:
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             CacheRateLimitBackend()
+
+
+class TestCacheFailsOpen:
+    """If the cache backend itself is unreachable, hit() must not take the
+    whole authenticated API down with it -- see the class docstring on
+    CacheRateLimitBackend for the reasoning."""
+
+    def test_connection_error_from_add_fails_open(self, tenant: Tenant) -> None:
+        key = TenantAPIKey.generate_key(name="k", tenant=tenant, rate_limit=1)[0]
+        backend = CacheRateLimitBackend()
+        with mock.patch.object(backend.cache, "add", side_effect=ConnectionError("down")):
+            result = backend.hit(f"ratelimit:{key.pk}", limit=1, window_seconds=60)
+        assert result.allowed is True
+        assert result.limit is None  # nothing meaningful could be reported
+
+    def test_connection_error_from_incr_fails_open(self, tenant: Tenant) -> None:
+        key = TenantAPIKey.generate_key(name="k", tenant=tenant, rate_limit=1)[0]
+        backend = CacheRateLimitBackend()
+        with mock.patch.object(backend.cache, "incr", side_effect=TimeoutError("down")):
+            result = backend.hit(f"ratelimit:{key.pk}", limit=1, window_seconds=60)
+        assert result.allowed is True
+
+    def test_cache_failure_is_logged(
+        self, tenant: Tenant, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        import logging
+
+        backend = CacheRateLimitBackend()
+        with mock.patch.object(backend.cache, "add", side_effect=ConnectionError("down")):
+            with caplog.at_level(logging.WARNING, logger="django_tenant_apikeys"):
+                backend.hit("ratelimit:test", limit=1, window_seconds=60)
+        assert "unavailable" in caplog.text
+
+    def test_a_request_still_succeeds_end_to_end_when_the_cache_is_down(
+        self, tenant: Tenant
+    ) -> None:
+        # check_rate_limit() -> get_rate_limit_backend() -> hit(): the whole
+        # chain must still return a usable result, not raise.
+        key = TenantAPIKey.generate_key(name="k", tenant=tenant, rate_limit=1)[0]
+        with mock.patch.object(cache, "add", side_effect=ConnectionError("down")):
+            result = check_rate_limit(key)
+        assert result.allowed is True
+
+    def test_unexpected_value_error_from_incr_is_still_handled_as_the_known_race(
+        self, tenant: Tenant
+    ) -> None:
+        # Regression guard: the existing "window rolled over between add()
+        # and incr()" recovery must keep working once it's nested inside the
+        # broader failure handling.
+        backend = CacheRateLimitBackend()
+        with mock.patch.object(backend.cache, "incr", side_effect=ValueError("key not found")):
+            result = backend.hit("ratelimit:test", limit=5, window_seconds=60)
+        assert result.allowed is True
+        assert result.remaining == 4  # counted as the first request, not dropped
