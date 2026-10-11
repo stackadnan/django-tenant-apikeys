@@ -43,6 +43,21 @@ class TenantAPIKey(AbstractTenantAPIKey):
         return self.tenant.is_active
 
 
+class TenantResource(models.Model):
+    """A minimal stand-in for an application resource scoped to a tenant
+    (an ``Order``, a ``Project``, whatever a real host app has) -- used only
+    by ``tests/test_tenant_isolation.py`` to prove that the documented
+    `request.tenant`-filtering pattern actually blocks cross-tenant access.
+    Not part of the distributed package; the package itself has no opinion
+    on resources beyond the ``tenant`` relation on the key model itself."""
+
+    tenant = models.ForeignKey(Tenant, related_name="resources", on_delete=models.CASCADE)
+    label = models.CharField(max_length=100)
+
+    class Meta:
+        app_label = "tests"
+
+
 class UnlinkedAPIKey(AbstractTenantAPIKey):
     """A concrete API key model with no ``tenant`` relation.
 
